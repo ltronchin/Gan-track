@@ -1,0 +1,33 @@
+seed: 42
+id_exp:
+
+device:
+  device_type: gpu
+  worker: cuda:0
+  gpu_num_workers: 32
+
+data:
+  image_size: 256
+  channel: 1
+  source_dataset: claro_retrospettivo
+  processed_dataset: claro_retrospettivo
+  iid_classes: claro_retrospettivo
+  ood_classes: claro_prospettivo
+
+  data_dir: ./data/data_raw
+  interim_dir: ./data/interim
+  box_file: ./data/interim/claro/data.xlsx
+  box_value: max_box #box
+
+  clip:
+    min: -1000
+    max: 1000
+
+  scale:
+    min: -1000
+    max: 1000
+
+  convert_to_uint8: True
+
+network:
+  model_name: 'stylegan2-ada'

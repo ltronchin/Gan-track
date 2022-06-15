@@ -1,0 +1,32 @@
+######## General ########
+seed: 42
+id_exp: 3
+
+device:
+  device_type: gpu
+  worker: cuda:0
+  gpu_num_workers: 32
+
+data:
+  image_size: 256
+  channel: 1
+  drange_net: [-1, 1]  # Dynamic range used when feeding image data to the networks.
+  dataset: claro_retrospettivo
+  iid_classes: claro_retrospettivo
+  ood_classes: claro_prospettivo
+
+  data_dir: "./data/data_raw"
+  interim_dir: "./data/interim"
+  model_dir: "./models"
+  reports_dir: "./reports"
+
+
+prerequisites:
+  model_gan: "./models/claro_retrospettivo/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl"
+
+######## GAN ########
+model_gan:
+  model_name: stylegan2-ada
+
+trainer_gan:
+  w_dim: 10

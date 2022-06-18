@@ -1,0 +1,25 @@
+seed: 42
+id_exp:
+
+device:
+  device_type: gpu
+  worker: cuda:0
+  gpu_num_workers: 32
+
+data:
+  image_size: 512
+  channel: 1
+  source_dataset: pelvis_2_1
+  processed_dataset: pelvis_2_1
+
+  data_dir: ./data/data_raw
+  interim_dir: ./data/interim
+  reports_dir: ./reports/
+
+  modatility:
+    - MR_nonrigid_CT
+    - MR_MR_T2_BC
+    - MR_MR_T2
+
+network:
+  model_name: 'stylegan2-ada'

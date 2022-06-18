@@ -234,14 +234,15 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, rel_l
         if images.max() != 255:
             temp = []
             for img in images:
-                img = img * 255
+                lo, hi =  img.min(), img.max()
+                img = (img - lo) * (255 / (hi - lo))
                 img = img.clamp(0, 255).to(torch.uint8)
                 temp.append(img.unsqueeze(dim=0))
             images = torch.cat(temp)
         # CUSTOMIZING START
 
         if images.shape[1] == 1:
-            images = images.repeat([1, 3, 1, 1]) # make a three channel tensor
+            images = images.repeat([1, 3, 1, 1])
         features = detector(images.to(opts.device), **detector_kwargs)
         stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
         progress.update(stats.num_items)

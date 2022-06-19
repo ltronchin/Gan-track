@@ -2,24 +2,43 @@ seed: 42
 id_exp:
 
 device:
-  device_type: gpu
+  device_type: cpu
   worker: cuda:0
   gpu_num_workers: 32
 
 data:
-  image_size: 512
+  image_size: 256
   channel: 1
-  source_dataset: pelvis_2_1
-  processed_dataset: pelvis_2_1
 
+  source_dataset: Pelvis_2.1
+  processed_dataset: Pelvis_2.1
   data_dir: ./data/data_raw
   interim_dir: ./data/interim
   reports_dir: ./reports/
 
-  modatility:
-    - MR_nonrigid_CT
-    - MR_MR_T2_BC
-    - MR_MR_T2
+  modes:
+    MR_nonrigid_CT:
+      clip:
+        min: -1000
+        max: 2000
+      scale:
+        min: -1000
+        max: 2000
+    MR_MR_T2_BC:
+      clip:
+        min: 0
+        max: 4000
+      scale:
+        min: 0
+        max: 4000
+    MR_MR_T2:
+
+  preprocessing_option:
+    process_dicom_2_nifti:
+    process_nifti_resized: on
+    process_nifti_normalized:
+    snap_pickle:
+    snap_zip:
 
 network:
   model_name: 'stylegan2-ada'

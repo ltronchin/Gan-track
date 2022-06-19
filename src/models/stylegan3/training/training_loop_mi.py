@@ -26,11 +26,6 @@ from torch_utils.ops import grid_sample_gradfix
 import legacy
 from metrics import metric_main
 
-
-# todo check the image feeded to augment pipeline
-# todo search for all code [0 255] or dtype
-
-
 # CUSTOMIZING START
 #----------------------------------------------------------------------------
 def convert_to_grayscale(images):

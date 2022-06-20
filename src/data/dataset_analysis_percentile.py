@@ -21,6 +21,11 @@ import os
 import yaml
 import time
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+
+plt.rcParams['figure.figsize'] = [10, 8]
+plt.rcParams['figure.dpi'] = 400
+plt.rcParams['font.size'] = 12
 
 import torch
 
@@ -99,6 +104,7 @@ df = pd.concat(frames)
 
 print('\nStart analysis to determine the maximum values for rescaling step')
 per_list = [key for key in df.keys() if 'per' in key]
+per_list = [per_list[p] for p in range(0, len(per_list), 10)] + [per_list[-1]]
 for mode in modes:
     std_dict = {}
     mean_dict = {}
@@ -144,12 +150,18 @@ for mode in modes:
     print(f"Min value per percentile {best_std_perc_name}: {list(min_dict.values())[best_perc_idx[0]]}")
     print(f"Max value per percentile {best_std_perc_name}: {list(max_dict.values())[best_perc_idx[0]]}")
     print('\n')
+
     # Std
+    fig, ax = plt.subplots()
     plt.plot(std_dict.values(), marker='.')
-    plt.xlabel('Perc from 99.00 to 99.99 with step 0.01')
+    plt.xticks(np.arange(len(per_list)), [p.split('_')[-1] for p in per_list], rotation=-90)
+    ax.xaxis.set_major_locator(mticker.MultipleLocator(5))
+    ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    plt.xlabel('Perc')
     plt.ylabel('Standard Deviation')
     plt.title(mode)
-    plt.savefig(os.path.join(reports_dir, f"std_{mode}.png"), dpi=400, format='png')
+    fig.savefig(os.path.join(reports_dir, f"std_{mode}.png"), dpi=400, format='png')
     plt.show()
 
     # Std + slope
@@ -157,38 +169,51 @@ for mode in modes:
     ax2 = ax1.twinx()
     ax1.plot(std_dict.values(), color='blue', marker='.')
     ax2.plot(np.gradient(list(std_dict.values())), color='black', linestyle='--')
-    ax1.set_xlabel('Perc from 99.00 to 99.99 with step 0.01')
+    ax1.set_xlabel('Perc')
     ax1.set_ylabel('Standard Deviation', color='blue')
     ax2.set_ylabel('Slope', color='black')
     plt.title(mode)
-    fig.savefig(os.path.join(reports_dir, f"std_{mode}.png"), dpi=400, format='png')
+    fig.savefig(os.path.join(reports_dir, f"std_slope_{mode}.png"), dpi=400, format='png')
     plt.show()
 
     # Std differences
+    fig, ax = plt.subplots()
     plt.plot(np.abs(np.diff(np.asarray(list(std_dict.values()))[:, np.newaxis], axis=0)), marker='.')
-    plt.xlabel('Perc from 99.00 to 99.99 with step 0.01')
-    plt.ylabel('Differences between i and i-1 values in module')
+    plt.xticks(np.arange(len(per_list)), [p.split('_')[-1] for p in per_list], rotation=-90)
+    ax.xaxis.set_major_locator(mticker.MultipleLocator(5))
+    ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    plt.xlabel('Perc')
+    plt.ylabel('Differences between i and i-1 standard deviation values in module')
     plt.title(mode)
     plt.savefig(os.path.join(reports_dir, f"abs_diff_{mode}.png"), dpi=400, format='png')
-    plt.show()
+    fig.show()
 
     # Mean
+    fig, ax = plt.subplots()
     plt.plot(mean_dict.values(), marker='.')
-    plt.xlabel('Perc from 99.00 to 99.99 with step 0.01')
+    plt.xticks(np.arange(len(per_list)), [p.split('_')[-1] for p in per_list], rotation=-90)
+    ax.xaxis.set_major_locator(mticker.MultipleLocator(5))
+    ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    plt.xlabel('Perc')
     plt.ylabel('Mean')
     plt.title(mode)
-    plt.savefig(os.path.join(reports_dir, f"mean_{mode}.png"), dpi=400, format='png')
+    fig.savefig(os.path.join(reports_dir, f"mean_{mode}.png"), dpi=400, format='png')
     plt.show()
 
     # Mean +/- std
+    fig, ax = plt.subplots()
     plt.errorbar(np.arange(len(mean_dict)), mean_dict.values(), yerr=std_dict.values(), ecolor='tomato', label='+/-std', linewidth=2, marker='.')
-    plt.xlabel('Perc from 99.00 to 99.99 with step 0.01')
+    plt.xticks(np.arange(len(per_list)), [p.split('_')[-1] for p in per_list], rotation=-90)
+    ax.xaxis.set_major_locator(mticker.MultipleLocator(5))
+    ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    plt.xlabel('Perc')
     plt.ylabel('Mean + Standard Deviation')
     plt.title(mode)
     plt.legend()
-    plt.savefig(os.path.join(reports_dir, f"mean_std_{mode}.png"), dpi=400, format='png')
+    fig.savefig(os.path.join(reports_dir, f"mean_std_{mode}.png"), dpi=400, format='png')
     plt.show()
 
-
-
-
+print("May the force be with you!")

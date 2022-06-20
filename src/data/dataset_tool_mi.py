@@ -32,6 +32,7 @@ from tqdm import tqdm
 
 # Lorenzo
 import yaml
+import matplotlib.pyplot as plt
 from src.utils import util_general
 
 # Minh
@@ -40,6 +41,9 @@ import dicom2nifti
 from itertools import repeat
 import nibabel as nib
 from multiprocessing import Pool
+import shutil
+from random import shuffle
+
 import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
 import src.engine.utils.volume as volume_utils
@@ -109,6 +113,43 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
                 break
+    return max_idx, iterate_images()
+
+def open_image_folder_patients(source_dir, *, max_patients: Optional[int], dataset):
+    input_patients = glob.glob(os.path.join(source_dir, "*"))
+
+    # Load labels.
+    labels = {}
+
+    max_idx = maybe_min(len(input_patients), max_patients)
+
+    def iterate_images():
+        for idx, patient in enumerate(input_patients):
+            arch_fname = os.path.relpath(patient, source_dir)
+            arch_fname = arch_fname.replace("\\", "/")
+
+            # Read all modalities of one patient
+            modalities = glob.glob(os.path.join(patient, "*.nii.gz"))
+            name_modalities = [path_utils.get_filename(path) for path in modalities]
+            name_modalities = [name_modalities[i].replace(".nii.gz", "") for i in range(len(name_modalities))] # remove the .nii.gz
+
+            parent_dir = path_utils.get_parent_dir(modalities[0])
+            patient_name = path_utils.get_filename(parent_dir)
+
+            fdata = {}
+            for name_modality in name_modalities:
+                fdata[name_modality] = nib.load(os.path.join(parent_dir, f"{name_modality}.nii.gz")).get_fdata()
+
+            depth = nib.load(modalities[0]).shape[-1] # save the number of slices/channel
+            for d in range(depth):
+                img = {}  # dictionary of modalities.
+                for name_modality in name_modalities:
+                    img[name_modality] = fdata[name_modality][:, :, d]  # based on depth index (d): 0000->0128
+                yield dict(img=img,label=labels.get(arch_fname),  name=f"{patient_name:s}_{d:05d}",  folder_name=f"{patient_name:s}")
+
+            if idx >= max_idx - 1:
+                break
+
     return max_idx, iterate_images()
 
 #----------------------------------------------------------------------------
@@ -203,6 +244,14 @@ def open_dataset(source, *, max_images: Optional[int]):
             assert False, 'unknown archive type'
     else:
         error(f'Missing input file or directory: {source}')
+
+def open_dataset_patient(source, *, max_patients: Optional[int], dataset):
+    if os.path.isdir(source):
+        return open_image_folder_patients(source, max_patients=max_patients, dataset=dataset)
+    elif os.path.isfile(source):
+        assert False, "unknown archive type"
+    else:
+        error(f"Missing input file or directory: {source}")
 
 #----------------------------------------------------------------------------
 
@@ -427,7 +476,7 @@ def resize_file(folder_index, folders, dest, image_shape, interpolation='linear'
         output_file = os.path.join(output_dir, f"{fname}.gz")
 
         try:
-            image = utils.read_image(file_mode, image_shape=image_shape, interpolation=interpolation, crop=None) # read and reshape image # todo step are not clear inside this fun
+            image = utils.read_image(file_mode, image_shape=image_shape, interpolation=interpolation, crop=None) # read and reshape image
             nib.save(image, output_file)
         except:
             raise IOError(f"fail to convert {file_mode:s}")
@@ -439,7 +488,7 @@ def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # resc
 
     # try:
     #     pool = Pool()  # Multithreading
-    #     l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check
+    #     l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check multiprocessing
     #     pool.close()
     # except:
     #     for idx_pat in range(len(folders)):
@@ -449,47 +498,41 @@ def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # resc
 
 #----------------------------------------------------------------------------
 
-def get_dataset_modality(file, dataset):
-    if dataset == "Pelvis_2.1":
-        if (
-            "MR_MR_T2.nii.gz" in file
-            or "MR_MR_T2_BC.nii.gz" in file
-            or "MR_MR_T2_Fat.nii.gz" in file
-            or "MR_MR_T2_OutPhase.nii.gz" in file
-            or "MR_MR_T2_Water.nii.gz" in file
-        ):
-            return "MR"
-        elif "MR_Bias_Field.nii.gz" in file:
-            return "bias"
-        else:
-            return "CT"
-    elif dataset == "brats20":
-        if "truth.nii.gz" in file:
-            return "truth"
-        else:
-            return "MR"
+def get_normalization_range(data, data_options):
 
-def normalize_file(folder_index, folders, dest, dataset, low=0.0, hi=255.0):
-    def normalize_per_dataset(data, dataset):
-        if dataset == "brats20":
-            # upper, lower = volume_utils.get_percentile(data) # Can not differentiate between different tumor regions.
-            upper, lower = data.max(), data.min()
-            data = np.clip(data, lower, upper)
-            data = (data - lower) / (upper - lower)
-            data = data * (hi - low) + low
-        elif dataset == "Pelvis_2.1":
-            """TODO
-            4000 for upper?
-            """
-            upper, lower = data.max(), 0.0  # use 4000 instead of data.max() for upper?
-            data = np.clip(data, lower, upper)
-            data = (data - lower) / (upper - lower)
-            data = data * (hi - low) + low
-        else:
-            raise NotImplementedError(
-                f"Normalization for {dataset} was not implemented."
-            )
-        return data
+    # Upper value
+    if data_options['upper_percentile'] is not None:
+        upper = np.percentile(data, data_options['upper_percentile'])
+    elif data_options['range']['max'] is not None:
+        upper = data_options['range']['max']
+    else:
+        upper = data.max()
+
+    # Lower value
+    if data_options['lower_percentile'] is not None:
+        lower = np.percentile(data, data_options['lower_percentile'])
+    elif data_options['range']['min'] is not None:
+        lower = data_options['range']['min']
+    else:
+        lower = data.min()
+
+    return upper, lower
+
+def normalize_per_dataset(data, dataset, modes_args, low=0.0, hi=255.0):
+    """follow this https://github.com/MIC-DKFZ/nnUNet/blob/master/nnunet/preprocessing/preprocessing.py"""
+    if dataset == "Pelvis_2.1":
+        upper, lower = get_normalization_range(data, modes_args)
+        data = np.clip(data, lower, upper)
+        data = (data - lower) / (upper - lower) # map between 0 and 1
+        # data = data * (hi - low) + low # put between 0 and 255
+    elif dataset == 'claro':
+        pass
+    else:
+        raise NotImplementedError(f"Normalization for {dataset} was not implemented.")
+    return data
+
+def normalize_file(folder_index, folders, dest, dataset, modes_args):
+    # Function that works per patient
 
     folder = folders[folder_index]
     name = path_utils.get_filename_without_extension(folder)
@@ -500,59 +543,227 @@ def normalize_file(folder_index, folders, dest, dataset, low=0.0, hi=255.0):
         files = glob.glob(os.path.join(files[0], "*"))
 
     # For each modality.
-    for file in files:
+    for file_mode in files:
         output_dir = os.path.join(dest, name)
-        path_utils.make_dir(output_dir)  # Make directory for each patient if not exist.
+        path_utils.make_dir(output_dir, is_printing=False)  # Make directory for each patient if not exist.
 
-        fname = path_utils.get_filename_without_extension(file)
+        fname = path_utils.get_filename_without_extension(file_mode)
         output_file = os.path.join(output_dir, f"{fname}.gz")
 
         try:
-            print(f"Reading: {file}")
-            volume = nib.load(file)
+            print(f"Reading: {file_mode}")
+            volume = nib.load(file_mode)
             data = volume.get_fdata()
-            modality = get_dataset_modality(file, dataset)
 
-            """follow this https://github.com/MIC-DKFZ/nnUNet/blob/master/nnunet/preprocessing/preprocessing.py
-            """
-            if modality == "CT":
-                percentile_99_5, percentile_00_5 = volume_utils.get_percentile(data)
-                lower_bound, upper_bound = -1000, 2000
-                data = np.clip(data, lower_bound, upper_bound)
-                # Map to [-1, 1].
-                # data = (data - 500) / 1500 # if you want to map to [-1,1]
-                data = (data + 1000) / 3000  # if you want to map to [0,1]
-            elif modality in ["truth", "seg"]:  # groundtruth
-                pass
-            else:  # MRI
-                data = normalize_per_dataset(data, dataset)
+            data = normalize_per_dataset(data, dataset, modes_args[fname.split('.')[0]])
 
             affine = volume.affine
             image = nib.Nifti1Image(data, affine=affine)
             nib.save(image, output_file)
 
         except:
-            raise IOError(f"fail to normalize {file:s}")
+            raise IOError(f"fail to normalize {file_mode:s}")
 
-def normalize_folder(source: str, dest: str, dataset: str):
+def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
     folders = glob.glob(os.path.join(source, "*"))
 
-    try:
-        pool = Pool() # Multithreading
-        l = pool.starmap(
-            normalize_file,
-            zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)),
-        )
-        pool.close()
-    except:
-        for idx_pat in range(len(folders)):
-            normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset)
+    #try:
+    #    pool = Pool() # Multithreading
+    #    l = pool.starmap(normalize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)))
+    #    pool.close()
+    #except:
+    #    for idx_pat in range(len(folders)):
+    #        normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_arg=modes_args)
+    for idx_pat in range(len(folders)):
+        normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_args=modes_args)
 
 #----------------------------------------------------------------------------
 
-def prepare_Pelvis_2_1(source_dir, dest_dir,
-                       modes_arg,
+def convert_dataset_mi(
+    source: str,
+    dest: str,
+    max_patients: Optional[int],
+    dataset: str,
+    is_overwrite=False,
+):
+
+    # Open normalized folder.
+    num_files, input_iter = open_dataset_patient(
+        source, max_patients=max_patients, dataset=dataset
+    )
+
+    # Create a temp folder to be save into zipfile
+    temp = os.path.join(dest, "temp")
+
+    if os.path.isdir(temp) and is_overwrite:
+        print(f"Removing {temp}")
+        shutil.rmtree(temp)
+    path_utils.make_dir(temp, is_printing=False)
+
+    dataset_attrs = None
+
+    for idx, image in tqdm(enumerate(input_iter), total=num_files):
+        folder_name = image["folder_name"]
+        idx_name = image["name"]
+        archive_fname = f"{folder_name}/{idx_name}.pickle"
+        path_utils.make_dir(os.path.join(temp, f"{folder_name}"), is_printing=False)
+        out_path = os.path.join(temp, archive_fname)
+
+        if not is_overwrite and os.path.exists(out_path):
+            continue
+
+        img = image["img"]
+        # Sanity check
+        from PIL import Image
+        for m in list(img.keys()):
+            sanity_check_dir = os.path.join(dest, 'sanity_check', folder_name, m)
+            path_utils.make_dir(sanity_check_dir, is_printing=False)
+            im = Image.fromarray(img[m])
+            im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
+
+        # Transform may drop images.
+        if img is None:
+            continue
+
+        # Error check to require uniform image attributes across # the whole dataset
+        modalities = sorted(img.keys())
+        cur_image_attrs = { "width": img[modalities[0]].shape[1], "height": img[modalities[0]].shape[0], "modalities": modalities}
+        if dataset_attrs is None:
+            dataset_attrs = cur_image_attrs
+            width = dataset_attrs["width"]
+            height = dataset_attrs["height"]
+            if width != height:
+                error(f"Image dimensions after scale and crop are required to be square.  Got {width}x{height}")
+            if width != 2 ** int(np.floor(np.log2(width))):
+                error("Image width/height after scale and crop are required to be power-of-two")
+        elif dataset_attrs != cur_image_attrs:
+            err = [f"  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}" for k in dataset_attrs.keys()]  # pylint: disable=unsubscriptable-object
+            error(f"Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n" + "\n".join(err))
+
+        # Save the dict as a pickle.
+        io_utils.write_pickle(img, out_path)
+
+# ----------------------------------------------------------------------------
+
+def split_list(input_list, split=0.8, shuffle_list=True):
+    if shuffle_list:
+        shuffle(input_list)
+    n_training = int(len(input_list) * split)
+    training = input_list[:n_training]
+    testing = input_list[n_training:]
+    return training, testing
+
+
+def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test=False):
+    if shuffle_list and not is_test:
+        shuffle(input_list)
+    if is_test:
+        print(input_list)
+    n_valid_sample = round(len(input_list) / 5)
+    fold_list = list()
+    for i_fold in range(n_fold):
+        n_start = i_fold * n_valid_sample
+        if i_fold < n_fold - 1:
+            n_end = (i_fold + 1) * n_valid_sample
+        else:
+            n_end = len(input_list)
+        val_list = input_list[n_start:n_end]
+        if i_fold == 0:
+            train_list = [e for i, e in enumerate(input_list) if i >= n_end]
+        elif i_fold == n_fold - 1:
+            train_list = [e for i, e in enumerate(input_list) if i < n_start]
+        else:
+            train_list = [e for i, e in enumerate(input_list) if i < n_start] + [
+                e for i, e in enumerate(input_list) if i >= n_end
+            ]
+        fold_list.append([train_list, val_list])
+    if is_test:
+        print(fold_list)
+    return fold_list
+
+
+def write_to_zip(source: str, dest=None, max_patients=30, split=None):
+    if split is None:
+        split = {"train": 0.8, "val": 0.2, "test": 0}
+
+    def add_to_zip(zipObj, patient, split):
+        files = glob.glob(os.path.join(patient, "*.pickle"))
+        if len(files) == 0:
+            files = glob.glob(os.path.join(patient, "*.png"))
+
+        print(f">> Writing {patient} to zip file")
+        for file in files:
+            filename = os.path.join(
+                split,
+                path_utils.get_filename_without_extension(patient),
+                path_utils.get_filename(file),
+            )
+            # Add file to zip
+            zipObj.write(file, filename)
+
+    # Get all patients in temp folder.
+    patients = glob.glob(os.path.join(source, "*"))
+    # Get only the names of patients
+    patients = [path_utils.get_filename_without_extension(patient) for patient in patients]
+    assert len(patients) > 0
+
+    max_patients = min(max_patients, len(patients))
+    train_split, val_split, test_split = split["train"], split["val"], split["test"]
+    basename = f"num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
+
+    # Load Splitted dataset if existed, if not make a new one.
+    if dest is None:
+        parent_dir = path_utils.get_parent_dir(source)
+    else:
+        parent_dir = dest
+
+    split_path = os.path.join(parent_dir, "train_val_test_ids", f"{basename}.pickle")
+    path_utils.make_dir(path_utils.get_parent_dir(split_path), is_printing=False)
+
+    if os.path.exists(split_path):
+        s = io_utils.read_pickle(split_path)
+        train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
+    else:
+        pass
+
+        # Shuffle and take max_patients samples from dataset.
+        patients = sorted(patients)
+        shuffle(patients)
+
+        sample_patients = patients[:max_patients]
+        train_patients, val_test_patients = split_list(sample_patients, train_split)
+        val_patients, test_patients = split_list(val_test_patients, val_split / (val_split + test_split))
+
+        s = {"train": train_patients, "val": val_patients, "test": test_patients}
+        import json
+        with open(os.path.join(parent_dir, "train_val_test_ids", f"{basename}.json"), 'w') as f:
+            json.dump(s, f, ensure_ascii=False, indent=4) # save as json
+
+        io_utils.write_pickle(s, split_path) # save as pickle
+
+    # Init zip file.
+    out_path = os.path.join(parent_dir, f"{basename}.zip",)
+
+    # Write to zip
+    with zipfile.ZipFile(out_path, "w") as zipObj:
+        for patient in train_patients:
+            patient_path = os.path.join(source, patient)
+            add_to_zip(zipObj, patient_path, "train")
+        for patient in val_patients:
+            patient_path = os.path.join(source, patient)
+            add_to_zip(zipObj, patient_path, "val")
+        for patient in test_patients:
+            patient_path = os.path.join(source, patient)
+            add_to_zip(zipObj, patient_path, "test")
+
+# ----------------------------------------------------------------------------
+
+def prepare_Pelvis_2_1(dataset,
                        resolution,
+                       source_dir,
+                       dest_dir,
+                       modes_args,
+                       validation_args,
                        process_dicom_2_nifti=None,
                        process_nifti_resized=None,
                        process_nifti_normalized=None,
@@ -563,7 +774,7 @@ def prepare_Pelvis_2_1(source_dir, dest_dir,
     dest_dir_nifti = os.path.join(dest_dir, 'nifti_volumes')
     if process_dicom_2_nifti is not None:
         print(f"Convert to nifti, output folder: {dest_dir_nifti}")
-        convert_dicom_2_nifti(source=source_dir, dest=dest_dir_nifti, modes_to_preprocess=list(modes_arg.keys()))
+        convert_dicom_2_nifti(source=source_dir, dest=dest_dir_nifti, modes_to_preprocess=list(modes_args.keys()))
 
     # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
     dest_dir_nifti_resized = os.path.join(dest_dir, f'nifti_volumes_{resolution}x{resolution}')
@@ -572,17 +783,26 @@ def prepare_Pelvis_2_1(source_dir, dest_dir,
         resize_nifti_folder(source=dest_dir_nifti, dest=dest_dir_nifti_resized, image_shape=(resolution, resolution))
 
     # Normalize each volume
-    dest_dir_nifti_resized_normalized = os.path.join(dest_dir, f'nifti_volumes_{resolution}x{resolution}_normalized')  # todo the statistics to normalize are passed from config file
+    dest_dir_nifti_resized_normalized = os.path.join(dest_dir, f'nifti_volumes_{resolution}x{resolution}_normalized')
     if process_nifti_normalized is not None:
         print(f"Normalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
-        normalize_folder(source=dest_dir_nifti_resized, dest=dest_dir_nifti_resized_normalized, modes_arg=modes_arg, dataset="Pelvis_2.1") #todo
+        normalize_folder(source=dest_dir_nifti_resized, dest=dest_dir_nifti_resized_normalized, dataset=dataset, modes_args=modes_args)
 
     # Write to pickle
+    dest_dir_pkl = os.path.join(dest_dir, f'pickle_{resolution}x{resolution}_normalized')
     if snap_pickle is not None:
-        pass #todo
+        print(f"Save to pickle, output_folder: {dest_dir_pkl}")
+        print(f"-----")
+        print("Each patient folder contains one .pkl file per slice")
+        print("Each .pkl file contains all the modes associated to the current slice and the current patient")
+        print(f"-----")
+        convert_dataset_mi(source=dest_dir_nifti_resized_normalized, dest=dest_dir_pkl, max_patients=np.inf, dataset=dataset)
+
     # Save as zip
+    dest_dir_zip = os.path.join(dest_dir, f'zip_{resolution}x{resolution}_normalized')
     if snap_zip is not None:
-        pass #todo
+        print(f"Normalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
+        write_to_zip(source= os.path.join(dest_dir_pkl, 'temp'), dest=dest_dir_zip,  max_patients=100000, split=validation_args['split'])
 
 #----------------------------------------------------------------------------
 
@@ -597,6 +817,7 @@ if __name__ == "__main__":
     source_dataset_name = cfg['data']['source_dataset']
     res = cfg['data']['image_size']
     modes_args = cfg['data']['modes']
+    validation_args = cfg['data']['validation']
 
     # # Submit run:
     # print("Submit run")
@@ -628,8 +849,10 @@ if __name__ == "__main__":
 
     # Useful print
     print(f"Source dataset: {source_dataset_name}")
-    print(f"Modes {list(modes_args.keys())}")
     print(f"Resolution {res}")
+    print(f"Modes {list(modes_args.keys())}")
+    print(f"Validation name: {validation_args['name']}")
+    print(f"Validation splits: {validation_args['split']}")
 
     # Files and Directories
     print('Create file and directory')
@@ -637,6 +860,4 @@ if __name__ == "__main__":
     interim_dir = os.path.join(cfg['data']['interim_dir'], source_dataset_name)
     reports_dir = os.path.join(cfg['data']['reports_dir'], source_dataset_name)
 
-    # todo compute patient list and generate folder splits and set different experiment with an incremental number of patients
-
-    prepare_Pelvis_2_1(source_dir=data_dir, dest_dir=interim_dir, modes_args=modes_args, resolution=res, **cfg['data']['preprocessing_option'])
+    prepare_Pelvis_2_1(dataset = source_dataset_name, resolution=res, source_dir=data_dir, dest_dir=interim_dir, modes_args=modes_args, validation_args = validation_args, **cfg['data']['preprocessing_option'])

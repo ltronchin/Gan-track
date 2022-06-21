@@ -22,14 +22,11 @@ import click
 
 import numpy as np
 import PIL.Image
-from tqdm import tqdm
 
-# Lorenzo
+
 import yaml
 from src.utils import util_general
 import json
-
-# Minh
 import glob
 import dicom2nifti
 from itertools import repeat
@@ -224,15 +221,13 @@ def resize_file(folder_index, folders, dest, image_shape, interpolation='linear'
 def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # rescale from [512, 512, n_slices_patient] -> [res, res, n_slices_patient]
 
     folders = glob.glob(os.path.join(source, "*"))
-    # try:
-    #     pool = Pool()  # Multithreading
-    #     l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check multiprocessing
-    #     pool.close()
-    # except:
-    #     for idx_pat in range(len(folders)):
-    #         resize_file(folder_index=idx_pat, folders=folders, dest=dest, image_shape=image_shape)
-    for idx_pat in range(len(folders)):
-        resize_file(folder_index=idx_pat, folders=folders, dest=dest, image_shape=image_shape)
+    try:
+        pool = Pool()  # Multithreading
+        l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check multiprocessing
+        pool.close()
+    except:
+        for idx_pat in range(len(folders)):
+            resize_file(folder_index=idx_pat, folders=folders, dest=dest, image_shape=image_shape)
 
 #----------------------------------------------------------------------------
 
@@ -306,15 +301,13 @@ def normalize_file(folder_index, folders, dest, dataset, modes_args):
 def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
     folders = glob.glob(os.path.join(source, "*"))
 
-    #try:
-    #    pool = Pool() # Multithreading
-    #    l = pool.starmap(normalize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)))
-    #    pool.close()
-    #except:
-    #    for idx_pat in range(len(folders)):
-    #        normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_arg=modes_args)
-    for idx_pat in range(len(folders)):
-        normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_args=modes_args)
+    try:
+       pool = Pool() # Multithreading
+       l = pool.starmap(normalize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)))
+       pool.close()
+    except:
+        for idx_pat in range(len(folders)):
+            normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_args=modes_args)
 
 #----------------------------------------------------------------------------
 

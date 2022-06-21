@@ -1,5 +1,4 @@
 seed: 42
-id_exp:
 
 device:
   device_type: cpu
@@ -16,29 +15,41 @@ data:
   interim_dir: ./data/interim
   reports_dir: ./reports/
 
+  validation:
+    name: hold_out
+    split:
+      "train": 0.7
+      "val": 0.2
+      "test": 0.1
+
   modes:
     MR_nonrigid_CT:
-      clip:
+      range:
         min: -1000
-        max: 2000
-      scale:
-        min: -1000
-        max: 2000
-    MR_MR_T2_BC:
-      clip:
-        min: 0
-        max: 4000
-      scale:
-        min: 0
-        max: 4000
+        max: 1000
+      upper_percentile:
+      lower_percentile:
+
+#    MR_MR_T2_BC:
+#      range:
+#        min: 0
+#        max: 50
+#      upper_percentile:
+#      lower_percentile:
+
     MR_MR_T2:
+      range:
+        min: 0
+        max: 3000
+      upper_percentile:
+      lower_percentile:
 
   preprocessing_option:
     process_dicom_2_nifti:
-    process_nifti_resized: on
+    process_nifti_resized:
     process_nifti_normalized:
     snap_pickle:
-    snap_zip:
+    snap_zip: on
 
 network:
   model_name: 'stylegan2-ada'

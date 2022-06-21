@@ -74,7 +74,7 @@ util_general.seed_all(cfg['seed'])
 
 # Useful print
 print(f"Source dataset: {source_dataset_name}")
-print(f"Modatility {modes}")
+print(f"Modality {modes}")
 
 # Register and history
 print("Initialize history")
@@ -134,8 +134,9 @@ for mode in modes:
     print(f"Min value per max intensity: {df_mode['max_intensity'].min()}")
     print(f"Max value per max intensity: {df_mode['max_intensity'].max()}")
     print(f"Minimum std values finded: {min_std_perc_value}, percentile: {min_std_perc_name}")
-    print(f"Min value per percentile {min_std_perc_name}: {list(min_dict.values())[min_std_idx[0]]}")
-    print(f"Max value per percentile {min_std_perc_name}: {list(max_dict.values())[min_std_idx[0]]}")
+    print(f"Using the {min_std_perc_name} the values for the upper limit are ranging between:"
+          f"[{list(min_dict.values())[min_std_idx[0]]}, {list(max_dict.values())[min_std_idx[0]]}]"
+          f" with a mean value: {list(mean_dict.values())[min_std_idx[0]]}")
 
     print('--diff/slope analysis--')
     thres = 0.01
@@ -147,8 +148,9 @@ for mode in modes:
     best_std_perc_value = list(std_dict.values())[best_perc_idx[0]]
     best_std_perc_name = list(std_dict.keys())[best_perc_idx[0]]
     print(f"Std values finded thres {thres}: {best_std_perc_value}, percentile: {best_std_perc_name}")
-    print(f"Min value per percentile {best_std_perc_name}: {list(min_dict.values())[best_perc_idx[0]]}")
-    print(f"Max value per percentile {best_std_perc_name}: {list(max_dict.values())[best_perc_idx[0]]}")
+    print(f"Using the {best_std_perc_name} the values for the upper limit are ranging between:"
+          f"[{list(min_dict.values())[best_perc_idx[0]]}, {list(max_dict.values())[best_perc_idx[0]]}]"
+          f" with a mean value: {list(mean_dict.values())[best_perc_idx[0]]}")
     print('\n')
 
     # Std
@@ -197,7 +199,7 @@ for mode in modes:
     ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     plt.xlabel('Perc')
-    plt.ylabel('Mean')
+    plt.ylabel('Mean percentile values')
     plt.title(mode)
     fig.savefig(os.path.join(reports_dir, f"mean_{mode}.png"), dpi=400, format='png')
     plt.show()
@@ -210,7 +212,7 @@ for mode in modes:
     ax.xaxis.set_minor_locator(mticker.MultipleLocator(1))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     plt.xlabel('Perc')
-    plt.ylabel('Mean + Standard Deviation')
+    plt.ylabel('Mean percentile value + Standard Deviation')
     plt.title(mode)
     plt.legend()
     fig.savefig(os.path.join(reports_dir, f"mean_std_{mode}.png"), dpi=400, format='png')

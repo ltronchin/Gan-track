@@ -15,12 +15,12 @@ plt.rcParams['figure.figsize'] = [8, 6]
 plt.rcParams['figure.dpi'] = 400
 plt.rcParams['font.size'] = 16
 
-data_dir = 'reports/claro_retrospettivo/stylegan2-ada/00000-stylegan2--gpus2-batch32-gamma0.4096/metric-fid50k_full_training.jsonl'
-report_dir = 'reports/claro_retrospettivo/stylegan2-ada/00000-stylegan2--gpus2-batch32-gamma0.4096/'
+data_dir = './reports/claro_retrospettivo_no_casting/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/metric-fid50k_full.jsonl'
+report_dir = './reports/claro_retrospettivo_no_casting/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/'
 
 metric_name = 'fid50k_full'
 snap_interval = 5
-total_kimg = 5000
+total_kimg = 4400 #5000
 
 data = [json.loads(line) for line in open(data_dir, 'r')]
 

@@ -310,8 +310,12 @@ def get_next_run_id_local(run_dir_root: str, module_name: str) -> int:
     dir_names = []
     for d in os.listdir(run_dir_root):
         if not 'configuration.yaml' in d and not 'log.txt' in d and not 'src' in d:
-            if os.path.isdir(os.path.join(run_dir_root, d)) and d.split('--')[1] == module_name:
-                dir_names.append(d)
+            try:
+                if os.path.isdir(os.path.join(run_dir_root, d)) and d.split('--')[1] == module_name:
+                    dir_names.append(d)
+            except IndexError:
+                if os.path.isdir(os.path.join(run_dir_root, d)):
+                    dir_names.append(d)
 
     r = re.compile("^\\d+")  # match one or more digits at the start of the string
     run_id = 1

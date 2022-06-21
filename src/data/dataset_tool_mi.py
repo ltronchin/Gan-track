@@ -12,28 +12,22 @@ import sys
 print('Python %s on %s' % (sys.version, sys.platform))
 sys.path.extend(["./"])
 
-import functools
-import gzip
-import io
-import json
 import os
-import pickle
 import re
 import sys
-import tarfile
 import zipfile
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Union
-
+from typing import Any, Optional, Tuple, Union
 import click
+
 import numpy as np
 import PIL.Image
 from tqdm import tqdm
 
 # Lorenzo
 import yaml
-import matplotlib.pyplot as plt
 from src.utils import util_general
+import json
 
 # Minh
 import glob
@@ -48,6 +42,22 @@ import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
 import src.engine.utils.volume as volume_utils
 import src.engine.utils.io_utils as io_utils
+
+#----------------------------------------------------------------------------
+class EasyDict(dict):
+    """Convenience class that behaves like a dict but allows access with the attribute syntax."""
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self[name] = value
+
+    def __delattr__(self, name: str) -> None:
+        del self[name]
 
 #----------------------------------------------------------------------------
 
@@ -89,31 +99,14 @@ def is_image_ext(fname: Union[str, Path]) -> bool:
 
 #----------------------------------------------------------------------------
 
-def open_image_folder(source_dir, *, max_images: Optional[int]):
-    input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if is_image_ext(f) and os.path.isfile(f)]
+def parse_comma_separated_list(s):
+    if isinstance(s, list):
+        return s
+    if s is None or s.lower() == 'none' or s == '':
+        return []
+    return s.split(',')
 
-    # Load labels.
-    labels = {}
-    meta_fname = os.path.join(source_dir, 'dataset.json')
-    if os.path.isfile(meta_fname):
-        with open(meta_fname, 'r') as file:
-            labels = json.load(file)['labels']
-            if labels is not None:
-                labels = { x[0]: x[1] for x in labels }
-            else:
-                labels = {}
-
-    max_idx = maybe_min(len(input_images), max_images)
-
-    def iterate_images():
-        for idx, fname in enumerate(input_images):
-            arch_fname = os.path.relpath(fname, source_dir)
-            arch_fname = arch_fname.replace('\\', '/')
-            img = np.array(PIL.Image.open(fname))
-            yield dict(img=img, label=labels.get(arch_fname))
-            if idx >= max_idx-1:
-                break
-    return max_idx, iterate_images()
+#----------------------------------------------------------------------------
 
 def open_image_folder_patients(source_dir, *, max_patients: Optional[int], dataset):
     input_patients = glob.glob(os.path.join(source_dir, "*"))
@@ -154,97 +147,6 @@ def open_image_folder_patients(source_dir, *, max_patients: Optional[int], datas
 
 #----------------------------------------------------------------------------
 
-def open_image_zip(source, *, max_images: Optional[int]):
-    with zipfile.ZipFile(source, mode='r') as z:
-        input_images = [str(f) for f in sorted(z.namelist()) if is_image_ext(f)]
-
-        # Load labels.
-        labels = {}
-        if 'dataset.json' in z.namelist():
-            with z.open('dataset.json', 'r') as file:
-                labels = json.load(file)['labels']
-                if labels is not None:
-                    labels = { x[0]: x[1] for x in labels }
-                else:
-                    labels = {}
-
-    max_idx = maybe_min(len(input_images), max_images)
-
-    def iterate_images():
-        with zipfile.ZipFile(source, mode='r') as z:
-            for idx, fname in enumerate(input_images):
-                with z.open(fname, 'r') as file:
-                    img = PIL.Image.open(file) # type: ignore
-                    img = np.array(img)
-                yield dict(img=img, label=labels.get(fname))
-                if idx >= max_idx-1:
-                    break
-    return max_idx, iterate_images()
-
-#----------------------------------------------------------------------------
-
-def make_transform(
-    transform: Optional[str],
-    output_width: Optional[int],
-    output_height: Optional[int]
-) -> Callable[[np.ndarray], Optional[np.ndarray]]:
-    def scale(width, height, img):
-        w = img.shape[1]
-        h = img.shape[0]
-        if width == w and height == h:
-            return img
-        img = PIL.Image.fromarray(img)
-        ww = width if width is not None else w
-        hh = height if height is not None else h
-        img = img.resize((ww, hh), PIL.Image.LANCZOS)
-        return np.array(img)
-
-    def center_crop(width, height, img):
-        crop = np.min(img.shape[:2])
-        img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
-        img = PIL.Image.fromarray(img, 'RGB')
-        img = img.resize((width, height), PIL.Image.LANCZOS)
-        return np.array(img)
-
-    def center_crop_wide(width, height, img):
-        ch = int(np.round(width * img.shape[0] / img.shape[1]))
-        if img.shape[1] < width or ch < height:
-            return None
-
-        img = img[(img.shape[0] - ch) // 2 : (img.shape[0] + ch) // 2]
-        img = PIL.Image.fromarray(img, 'RGB')
-        img = img.resize((width, height), PIL.Image.LANCZOS)
-        img = np.array(img)
-
-        canvas = np.zeros([width, width, 3], dtype=np.uint8)
-        canvas[(width - height) // 2 : (width + height) // 2, :] = img
-        return canvas
-
-    if transform is None:
-        return functools.partial(scale, output_width, output_height)
-    if transform == 'center-crop':
-        if (output_width is None) or (output_height is None):
-            error ('must specify --resolution=WxH when using ' + transform + 'transform')
-        return functools.partial(center_crop, output_width, output_height)
-    if transform == 'center-crop-wide':
-        if (output_width is None) or (output_height is None):
-            error ('must specify --resolution=WxH when using ' + transform + ' transform')
-        return functools.partial(center_crop_wide, output_width, output_height)
-    assert False, 'unknown transform'
-
-#----------------------------------------------------------------------------
-
-def open_dataset(source, *, max_images: Optional[int]):
-    if os.path.isdir(source):
-        return open_image_folder(source, max_images=max_images)
-    elif os.path.isfile(source):
-        if file_ext(source) == 'zip':
-            return open_image_zip(source, max_images=max_images)
-        else:
-            assert False, 'unknown archive type'
-    else:
-        error(f'Missing input file or directory: {source}')
-
 def open_dataset_patient(source, *, max_patients: Optional[int], dataset):
     if os.path.isdir(source):
         return open_image_folder_patients(source, max_patients=max_patients, dataset=dataset)
@@ -255,176 +157,8 @@ def open_dataset_patient(source, *, max_patients: Optional[int], dataset):
 
 #----------------------------------------------------------------------------
 
-def open_dest(dest: str) -> Tuple[str, Callable[[str, Union[bytes, str]], None], Callable[[], None]]:
-    dest_ext = file_ext(dest)
-
-    if dest_ext == 'zip':
-        if os.path.dirname(dest) != '':
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-        zf = zipfile.ZipFile(file=dest, mode='w', compression=zipfile.ZIP_STORED)
-        def zip_write_bytes(fname: str, data: Union[bytes, str]):
-            zf.writestr(fname, data)
-        return '', zip_write_bytes, zf.close
-    else:
-        # If the output folder already exists, check that is is
-        # empty.
-        #
-        # Note: creating the output directory is not strictly
-        # necessary as folder_write_bytes() also mkdirs, but it's better
-        # to give an error message earlier in case the dest folder
-        # somehow cannot be created.
-        if os.path.isdir(dest) and len(os.listdir(dest)) != 0:
-            error('--dest folder must be empty')
-        os.makedirs(dest, exist_ok=True)
-
-        def folder_write_bytes(fname: str, data: Union[bytes, str]):
-            os.makedirs(os.path.dirname(fname), exist_ok=True)
-            with open(fname, 'wb') as fout:
-                if isinstance(data, str):
-                    data = data.encode('utf8')
-                fout.write(data)
-        return dest, folder_write_bytes, lambda: None
-
-#----------------------------------------------------------------------------
-
-@click.command()
-@click.pass_context
-@click.option('--source', help='Directory or archive name for input dataset', required=True, metavar='PATH')
-@click.option('--dest', help='Output directory or archive name for output dataset', required=True, metavar='PATH')
-@click.option('--max-images', help='Output only up to `max-images` images', type=int, default=None)
-@click.option('--transform', help='Input crop/resize mode', type=click.Choice(['center-crop', 'center-crop-wide']))
-@click.option('--resolution', help='Output resolution (e.g., \'512x512\')', metavar='WxH', type=parse_tuple)
-def convert_dataset(
-    ctx: click.Context,
-    source: str,
-    dest: str,
-    max_images: Optional[int],
-    transform: Optional[str],
-    resolution: Optional[Tuple[int, int]]
-):
-    """Convert an image dataset into a dataset archive usable with StyleGAN2 ADA PyTorch.
-
-    The input dataset format is guessed from the --source argument:
-
-    \b
-    --source *_lmdb/                    Load LSUN dataset
-    --source cifar-10-python.tar.gz     Load CIFAR-10 dataset
-    --source train-images-idx3-ubyte.gz Load MNIST dataset
-    --source path/                      Recursively load all images from path/
-    --source dataset.zip                Recursively load all images from dataset.zip
-
-    Specifying the output format and path:
-
-    \b
-    --dest /path/to/dir                 Save output files under /path/to/dir
-    --dest /path/to/dataset.zip         Save output files into /path/to/dataset.zip
-
-    The output dataset format can be either an image folder or an uncompressed zip archive.
-    Zip archives makes it easier to move datasets around file servers and clusters, and may
-    offer better training performance on network file systems.
-
-    Images within the dataset archive will be stored as uncompressed PNG.
-    Uncompresed PNGs can be efficiently decoded in the training loop.
-
-    Class labels are stored in a file called 'dataset.json' that is stored at the
-    dataset root folder.  This file has the following structure:
-
-    \b
-    {
-        "labels": [
-            ["00000/img00000000.png",6],
-            ["00000/img00000001.png",9],
-            ... repeated for every image in the datase
-            ["00049/img00049999.png",1]
-        ]
-    }
-
-    If the 'dataset.json' file cannot be found, the dataset is interpreted as
-    not containing class labels.
-
-    Image scale/crop and resolution requirements:
-
-    Output images must be square-shaped and they must all have the same power-of-two
-    dimensions.
-
-    To scale arbitrary input image size to a specific width and height, use the
-    --resolution option.  Output resolution will be either the original
-    input resolution (if resolution was not specified) or the one specified with
-    --resolution option.
-
-    Use the --transform=center-crop or --transform=center-crop-wide options to apply a
-    center crop transform on the input image.  These options should be used with the
-    --resolution option.  For example:
-
-    \b
-    python dataset_tool.py --source LSUN/raw/cat_lmdb --dest /tmp/lsun_cat \\
-        --transform=center-crop-wide --resolution=512x384
-    """
-
-    PIL.Image.init() # type: ignore
-
-    if dest == '':
-        ctx.fail('--dest output filename or directory must not be an empty string')
-
-    num_files, input_iter = open_dataset(source, max_images=max_images)
-    archive_root_dir, save_bytes, close_dest = open_dest(dest)
-
-    if resolution is None: resolution = (None, None)
-    transform_image = make_transform(transform, *resolution)
-
-    dataset_attrs = None
-
-    labels = []
-    for idx, image in tqdm(enumerate(input_iter), total=num_files):
-        idx_str = f'{idx:08d}'
-        archive_fname = f'{idx_str[:5]}/img{idx_str}.png'
-
-        # Apply crop and resize.
-        img = transform_image(image['img'])
-
-        # Transform may drop images.
-        if img is None:
-            continue
-
-        # Error check to require uniform image attributes across
-        # the whole dataset.
-        channels = img.shape[2] if img.ndim == 3 else 1
-        cur_image_attrs = {
-            'width': img.shape[1],
-            'height': img.shape[0],
-            'channels': channels
-        }
-        if dataset_attrs is None:
-            dataset_attrs = cur_image_attrs
-            width = dataset_attrs['width']
-            height = dataset_attrs['height']
-            if width != height:
-                error(f'Image dimensions after scale and crop are required to be square.  Got {width}x{height}')
-            if dataset_attrs['channels'] not in [1, 3]:
-                error('Input images must be stored as RGB or grayscale')
-            if width != 2 ** int(np.floor(np.log2(width))):
-                error('Image width/height after scale and crop are required to be power-of-two')
-        elif dataset_attrs != cur_image_attrs:
-            err = [f'  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}' for k in dataset_attrs.keys()] # pylint: disable=unsubscriptable-object
-            error(f'Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n' + '\n'.join(err))
-
-        # Save the image as an uncompressed PNG.
-        img = PIL.Image.fromarray(img, { 1: 'L', 3: 'RGB' }[channels])
-        image_bits = io.BytesIO()
-        img.save(image_bits, format='png', compress_level=0, optimize=False)
-        save_bytes(os.path.join(archive_root_dir, archive_fname), image_bits.getbuffer())
-        labels.append([archive_fname, image['label']] if image['label'] is not None else None)
-
-    metadata = {
-        'labels': labels if all(x is not None for x in labels) else None
-    }
-    save_bytes(os.path.join(archive_root_dir, 'dataset.json'), json.dumps(metadata))
-    close_dest()
-
-#----------------------------------------------------------------------------
-
-def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list, save_to_folder: bool=False):
-    """Function to merge the slices of each patient (dicom) to nifti volume (do ir for each modatility)"""
+def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list):
+    """Function to merge the slices of each patient (dicom) to nifti volume (do ir for each modality)"""
     patients = glob.glob(os.path.join(source, "*")) # patient folders
 
     # Cycle on patients
@@ -438,9 +172,9 @@ def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list, sav
 
         path_utils.make_dir(output_dir, is_printing=False)
 
-        # Cycle on modatilies
+        # Cycle on modalities
         for fname_mode in modes_to_preprocess:
-            print(f"Modatility: {fname_mode}")
+            print(f"Modality: {fname_mode}")
             if os.listdir(pat) != fname_mode:
                 mode = os.path.join(pat, os.listdir(pat)[0], fname_mode)
             else:
@@ -476,16 +210,20 @@ def resize_file(folder_index, folders, dest, image_shape, interpolation='linear'
         output_file = os.path.join(output_dir, f"{fname}.gz")
 
         try:
-            image = utils.read_image(file_mode, image_shape=image_shape, interpolation=interpolation, crop=None) # read and reshape image
+            # Read, resample and resize the volume
+            # Example:
+            # -----
+            # If we want to resize from [512 x 512 x d] to [256 256 x d] and the pixelspacing in the source resolution
+            # is [1 1 3] we have to perform a respacing operation to [1/(512/256) 1/(512/256) 3]
+            # -----
+            image = utils.read_image(file_mode, image_shape=image_shape, interpolation=interpolation, crop=None)
             nib.save(image, output_file)
         except:
             raise IOError(f"fail to convert {file_mode:s}")
 
 def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # rescale from [512, 512, n_slices_patient] -> [res, res, n_slices_patient]
 
-
     folders = glob.glob(os.path.join(source, "*"))
-
     # try:
     #     pool = Pool()  # Multithreading
     #     l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check multiprocessing
@@ -524,7 +262,7 @@ def normalize_per_dataset(data, dataset, modes_args, low=0.0, hi=255.0):
         upper, lower = get_normalization_range(data, modes_args)
         data = np.clip(data, lower, upper)
         data = (data - lower) / (upper - lower) # map between 0 and 1
-        # data = data * (hi - low) + low # put between 0 and 255
+        data = data * 255 # put between 0 and 255
     elif dataset == 'claro':
         pass
     else:
@@ -532,8 +270,9 @@ def normalize_per_dataset(data, dataset, modes_args, low=0.0, hi=255.0):
     return data
 
 def normalize_file(folder_index, folders, dest, dataset, modes_args):
-    # Function that works per patient
+    """Process 1 patient"""
 
+    # Folder: patient
     folder = folders[folder_index]
     name = path_utils.get_filename_without_extension(folder)
     files = glob.glob(os.path.join(folder, "*"))
@@ -602,7 +341,7 @@ def convert_dataset_mi(
 
     dataset_attrs = None
 
-    for idx, image in tqdm(enumerate(input_iter), total=num_files):
+    for idx, image in enumerate(input_iter):
         folder_name = image["folder_name"]
         idx_name = image["name"]
         archive_fname = f"{folder_name}/{idx_name}.pickle"
@@ -618,7 +357,7 @@ def convert_dataset_mi(
         for m in list(img.keys()):
             sanity_check_dir = os.path.join(dest, 'sanity_check', folder_name, m)
             path_utils.make_dir(sanity_check_dir, is_printing=False)
-            im = Image.fromarray(img[m])
+            im = Image.fromarray(img[m]/255)
             im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
 
         # Transform may drop images.
@@ -682,7 +421,7 @@ def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test
     return fold_list
 
 
-def write_to_zip(source: str, dest=None, max_patients=30, split=None):
+def write_to_zip(source: str, dest=None, dataset="Pelvic_2.1", max_patients=30, split=None):
     if split is None:
         split = {"train": 0.8, "val": 0.2, "test": 0}
 
@@ -709,7 +448,7 @@ def write_to_zip(source: str, dest=None, max_patients=30, split=None):
 
     max_patients = min(max_patients, len(patients))
     train_split, val_split, test_split = split["train"], split["val"], split["test"]
-    basename = f"num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
+    basename = f"{dataset}-num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
 
     # Load Splitted dataset if existed, if not make a new one.
     if dest is None:
@@ -724,7 +463,11 @@ def write_to_zip(source: str, dest=None, max_patients=30, split=None):
         s = io_utils.read_pickle(split_path)
         train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
     else:
-        pass
+        train_split, val_split, test_split = (
+            train_split / (train_split + val_split + test_split),
+            val_split / (train_split + val_split + test_split),
+            test_split / (train_split + val_split + test_split),
+        )
 
         # Shuffle and take max_patients samples from dataset.
         patients = sorted(patients)
@@ -734,11 +477,10 @@ def write_to_zip(source: str, dest=None, max_patients=30, split=None):
         train_patients, val_test_patients = split_list(sample_patients, train_split)
         val_patients, test_patients = split_list(val_test_patients, val_split / (val_split + test_split))
 
-        s = {"train": train_patients, "val": val_patients, "test": test_patients}
-        import json
+        s = {"sample_patients":sample_patients,  "train": train_patients, "val": val_patients, "test": test_patients}
+        # Save the training/validation/test split
         with open(os.path.join(parent_dir, "train_val_test_ids", f"{basename}.json"), 'w') as f:
             json.dump(s, f, ensure_ascii=False, indent=4) # save as json
-
         io_utils.write_pickle(s, split_path) # save as pickle
 
     # Init zip file.
@@ -757,107 +499,114 @@ def write_to_zip(source: str, dest=None, max_patients=30, split=None):
             add_to_zip(zipObj, patient_path, "test")
 
 # ----------------------------------------------------------------------------
+@click.command()
+@click.option('--seed', help='Name of the input dataset', required=True, type=int, default=42)
+@click.option('--configuration_file', help='Path to configuration file', required=True, metavar='PATH')
+@click.option('--data_dir', help='Directory for input dataset', required=True, metavar='PATH')
+@click.option('--interim_dir', help='Output directory for output dataset', required=True, metavar='PATH')
+@click.option('--reports_dir', help='Output directory for reports', required=True, metavar='PATH')
+@click.option('--dataset', help='Name of the input dataset', required=True, type=str, default='Pelvis_2.1')
+@click.option('--resolution', help='Resolution of the processed images', required=True, type=int, default=256)
+@click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
+@click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
+@click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
+def prepare_Pelvis_2_1(**kwargs):
 
-def prepare_Pelvis_2_1(dataset,
-                       resolution,
-                       source_dir,
-                       dest_dir,
-                       modes_args,
-                       validation_args,
-                       process_dicom_2_nifti=None,
-                       process_nifti_resized=None,
-                       process_nifti_normalized=None,
-                       snap_pickle=None,
-                       snap_zip=None):
-
-    # From dicom to nifti
-    dest_dir_nifti = os.path.join(dest_dir, 'nifti_volumes')
-    if process_dicom_2_nifti is not None:
-        print(f"Convert to nifti, output folder: {dest_dir_nifti}")
-        convert_dicom_2_nifti(source=source_dir, dest=dest_dir_nifti, modes_to_preprocess=list(modes_args.keys()))
-
-    # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
-    dest_dir_nifti_resized = os.path.join(dest_dir, f'nifti_volumes_{resolution}x{resolution}')
-    if process_nifti_resized is not None:
-        print(f"Resize to resolution {resolution}, output folder: {dest_dir_nifti_resized}")
-        resize_nifti_folder(source=dest_dir_nifti, dest=dest_dir_nifti_resized, image_shape=(resolution, resolution))
-
-    # Normalize each volume
-    dest_dir_nifti_resized_normalized = os.path.join(dest_dir, f'nifti_volumes_{resolution}x{resolution}_normalized')
-    if process_nifti_normalized is not None:
-        print(f"Normalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
-        normalize_folder(source=dest_dir_nifti_resized, dest=dest_dir_nifti_resized_normalized, dataset=dataset, modes_args=modes_args)
-
-    # Write to pickle
-    dest_dir_pkl = os.path.join(dest_dir, f'pickle_{resolution}x{resolution}_normalized')
-    if snap_pickle is not None:
-        print(f"Save to pickle, output_folder: {dest_dir_pkl}")
-        print(f"-----")
-        print("Each patient folder contains one .pkl file per slice")
-        print("Each .pkl file contains all the modes associated to the current slice and the current patient")
-        print(f"-----")
-        convert_dataset_mi(source=dest_dir_nifti_resized_normalized, dest=dest_dir_pkl, max_patients=np.inf, dataset=dataset)
-
-    # Save as zip
-    dest_dir_zip = os.path.join(dest_dir, f'zip_{resolution}x{resolution}_normalized')
-    if snap_zip is not None:
-        print(f"Normalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
-        write_to_zip(source= os.path.join(dest_dir_pkl, 'temp'), dest=dest_dir_zip,  max_patients=100000, split=validation_args['split'])
-
-#----------------------------------------------------------------------------
-
-if __name__ == "__main__":
+    opts = EasyDict(**kwargs)
 
     # Configuration file
     print("Upload configuration file")
-    with open('./configs/pelvic_preprocessing.yaml') as file:
+    with open(opts.configuration_file) as file:
         cfg = yaml.load(file, Loader=yaml.FullLoader)
-
-    id_exp = cfg['id_exp']
-    source_dataset_name = cfg['data']['source_dataset']
-    res = cfg['data']['image_size']
     modes_args = cfg['data']['modes']
-    validation_args = cfg['data']['validation']
 
-    # # Submit run:
-    # print("Submit run")
-    # # Get new id_exp
-    # util_general.create_dir(os.path.join('log_run', source_dataset_name))
-    # log_dir = os.path.join('log_run', source_dataset_name, cfg['network']['model_name'])
-    # util_general.create_dir(log_dir)
-    # # Save the configuration file
-    # with open(os.path.join(log_dir, 'configuration.yaml'), 'w') as f:
-    #     yaml.dump(cfg, f, default_flow_style=False)
-    # # Initialize Logger
-    # logger = util_general.Logger(file_name=os.path.join(log_dir, 'log.txt'), file_mode="w", should_flush=True)
-    # # Copy the code in log_dir
-    # files = util_general.list_dir_recursively_with_ignore('src', ignores=['.DS_Store', 'models'],
-    #                                                       add_base_to_relative=True)
-    # files = [(f[0], os.path.join(log_dir, f[1])) for f in files]
-    # util_general.copy_files_and_create_dirs(files)
+    # Submit run:
+    print("Submit run")
+    run_module = os.path.basename(__file__)
+    run_id = util_general.get_next_run_id_local(os.path.join('log_run', opts.dataset), run_module)  # GET run id
+    # Create log dir
+    run_name = "{0:05d}--{1}".format(run_id, run_module)
+    log_dir = os.path.join('log_run', opts.dataset, run_name)
+    util_general.create_dir(log_dir)
+    # Save the configuration file
+    with open(os.path.join(log_dir, 'configuration.json'), 'w') as f:
+        json.dump(opts, f, ensure_ascii=False,  indent=4)
+    # Initialize Logger
+    logger = util_general.Logger(file_name=os.path.join(log_dir, 'log.txt'), file_mode="w", should_flush=True)
+    # Copy the code in log_dir
+    files = util_general.list_dir_recursively_with_ignore('src', ignores=['.DS_Store'],  add_base_to_relative=True)
+    files = [(f[0], os.path.join(log_dir, f[1])) for f in files]
+    util_general.copy_files_and_create_dirs(files)
 
     # Welcome
     from datetime import datetime
-
     now = datetime.now()
     date_time = now.strftime("%d/%m/%Y, %H:%M:%S")
     print("Hello!", date_time)
 
     # Seed everything
     print("Seed all")
-    util_general.seed_all(cfg['seed'])
-
-    # Useful print
-    print(f"Source dataset: {source_dataset_name}")
-    print(f"Resolution {res}")
-    print(f"Modes {list(modes_args.keys())}")
-    print(f"Validation name: {validation_args['name']}")
-    print(f"Validation splits: {validation_args['split']}")
+    util_general.seed_all(opts.seed)
 
     # Files and Directories
     print('Create file and directory')
-    data_dir = os.path.join(cfg['data']['data_dir'], source_dataset_name)
-    interim_dir = os.path.join(cfg['data']['interim_dir'], source_dataset_name)
-    reports_dir = os.path.join(cfg['data']['reports_dir'], source_dataset_name)
+    data_dir = os.path.join(opts.data_dir, opts.dataset)
+    interim_dir = os.path.join(opts.interim_dir, opts.dataset)
+    reports_dir = os.path.join(opts.reports_dir, opts.dataset, run_name)
 
-    prepare_Pelvis_2_1(dataset = source_dataset_name, resolution=res, source_dir=data_dir, dest_dir=interim_dir, modes_args=modes_args, validation_args = validation_args, **cfg['data']['preprocessing_option'])
+    # Useful print
+    print()
+    print('Training options:')
+    print()
+    print(f'Data directory:      {data_dir}')
+    print(f'Output directory:    {interim_dir}')
+    print(f'Report directory:    {reports_dir}')
+    print(f'Dataset resolution:  {opts.resolution}')
+    print(f'Modes list:          {list(modes_args.keys())}')
+    print(f'Modes args:          {modes_args}')
+    print(f'Processing step:     {opts.processing_step}')
+    print(f'Validation method:   {opts.validation_method}')
+    print(f'Validation split:    {opts.validation_split}')
+    print()
+
+    # From dicom to nifti
+    dest_dir_nifti = os.path.join(interim_dir, 'nifti_volumes')
+    if opts.processing_step == 'process_dicom_2_nifti':
+        print(f"\nConvert to nifti, output folder: {dest_dir_nifti}")
+        convert_dicom_2_nifti(source=data_dir, dest=dest_dir_nifti, modes_to_preprocess=list(modes_args.keys()))
+
+    # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
+    dest_dir_nifti_resized = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}')
+    if opts.processing_step == 'process_nifti_resized':
+        print(f"\nResize to resolution {opts.resolution}, output folder: {dest_dir_nifti_resized}")
+        resize_nifti_folder(source=dest_dir_nifti, dest=dest_dir_nifti_resized, image_shape=(opts.resolution, opts.resolution))
+
+    # Normalize each volume
+    dest_dir_nifti_resized_normalized = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_normalized')
+    if opts.processing_step == 'process_nifti_normalized':
+        print(f"\nNormalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
+        normalize_folder(source=dest_dir_nifti_resized, dest=dest_dir_nifti_resized_normalized, dataset=opts.dataset, modes_args=cfg['data']['modes'])
+
+    # Write to pickle
+    dest_dir_pkl = interim_dir
+    if opts.processing_step == 'snap_pickle':
+        print(f"\nSave to pickle, output_folder: {dest_dir_pkl}")
+        print(f"-----")
+        print("Each patient folder contains one .pkl file per slice")
+        print("Each .pkl file contains all the modes associated to the current slice and the current patient")
+        print(f"-----")
+        convert_dataset_mi(source=dest_dir_nifti_resized_normalized, dest=dest_dir_pkl, max_patients=np.inf, dataset=opts.dataset)
+
+    # Save as zip
+    dest_dir_zip = interim_dir
+    if opts.processing_step == 'snap_zip':
+        print(f"\nSave to zip, output folder: {dest_dir_zip}")
+        write_to_zip(source= os.path.join(dest_dir_pkl, 'temp'), dest=dest_dir_zip,  max_patients=100000, split=opts.validation_split)
+
+#----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+
+    prepare_Pelvis_2_1()
+
+    print("May be the force with you!")

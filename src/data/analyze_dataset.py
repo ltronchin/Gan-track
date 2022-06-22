@@ -269,9 +269,9 @@ def main():
     #     analyze_one_folder(folder, dataset, output_dir, overwrite=True)
     
     
-        folder = './data/data_raw/pelvic/' # f"/mnt/Data/github/3DUnetCNN_BRATS/projects/brats20/database/data_train/original"
+        folder = './data/data_raw/pelvis/' # f"/mnt/Data/github/3DUnetCNN_BRATS/projects/brats20/database/data_train/original"
         dataset = f"preprocessed-256x256"
-        output_dir = './data/interim/pelvic'
+        output_dir = './data/interim/pelvis'
         analyze_one_folder(folder, dataset, output_dir, overwrite=True)
 
 

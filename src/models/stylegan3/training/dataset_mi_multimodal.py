@@ -16,6 +16,10 @@ import json
 import torch
 import dnnlib
 
+# CUSTOMIZING START
+import pickle
+# CUSTOMIZING END
+
 try:
     import pyspng
 except ImportError:
@@ -32,13 +36,22 @@ class Dataset(torch.utils.data.Dataset):
         # CUSTOMIZING END
         max_size    = None,     # Artificially limit the size of the dataset. None = no limit. Applied before xflip.
         use_labels  = False,    # Enable conditioning labels? False = label dimension is zero.
-        xflip       = False,     # Artificially double the size of the dataset via x-flips. Applied after max_size.
+        xflip        = False,    # Artificially double the size of the dataset via x-flips. Applied after max_size.
+        # CUSTOMIZING START
+        split="train",          # Dataset to train
+        modalities=None,        # Input modalities for StyleGAN.
+        # CUSTOMIZING END
         random_seed = 0,        # Random seed to use when applying max_size.
     ):
+
         self._name = name
         # CUSTOMIZING START
         self._dtype = dtype
-        # CUSTOMIZING START
+        self._split = split
+        if modalities is None:
+            modalities = ['MR_nonrigid_CT', 'MR_MR_T2']
+        self._modalities = modalities
+        # CUSTOMIZING STOP
         self._raw_shape = list(raw_shape)
         self._use_labels = use_labels
         self._raw_labels = None
@@ -113,7 +126,10 @@ class Dataset(torch.utils.data.Dataset):
     def get_details(self, idx):
         d = dnnlib.EasyDict()
         d.raw_idx = int(self._raw_idx[idx])
-        d.xflip = (int(self._xflip[idx]) != 0)
+        # CUSTOMIZING START
+        # d.xflip = (int(self._xflip[idx]) != 0)
+        d.xflip = int(self._xflip[idx]) != 0
+        # CUSTOMIZING END
         d.raw_label = self._get_raw_labels()[d.raw_idx].copy()
         return d
 
@@ -125,6 +141,12 @@ class Dataset(torch.utils.data.Dataset):
     @property
     def dtype(self):
         return self._dtype
+    @property
+    def modatilies(self):
+        return self._modalities
+    @property
+    def split(self):
+        return self._split
     # CUSTOMIZING END
 
     @property
@@ -167,35 +189,34 @@ class Dataset(torch.utils.data.Dataset):
 
 #----------------------------------------------------------------------------
 
-class ImageFolderDataset(Dataset):
-    def __init__(self,
-        path,                   # Path to directory or zip.
-        resolution      = None, # Ensure specific resolution, None = highest available.
-        **super_kwargs,         # Additional arguments for the Dataset base class.
+# CUSTOMIZING START
+class CustomImageFolderDataset(Dataset):
+    def __init__(
+        self,
+        path,             # Path to directory or zip.
+        resolution=None,  # Ensure specific resolution, None = highest available.
+        **super_kwargs,   # Additional arguments for the Dataset base class.
     ):
         self._path = path
         self._zipfile = None
+        self._split = super_kwargs["split"]
+        self._modalities = super_kwargs["modalities"]
 
-        # Check if the dataset is stored as dir or zip file
-        if os.path.isdir(self._path):
-            self._type = 'dir'
-            self._all_fnames = {os.path.relpath(os.path.join(root, fname), start=self._path) for root, _dirs, files in os.walk(self._path) for fname in files}
-        elif self._file_ext(self._path) == '.zip':
-            self._type = 'zip'
+        # Check if the dataset is stored as zip file (Only zip file accepted)
+        if self._file_ext(self._path) == ".zip":
+            self._type = "zip"
             self._all_fnames = set(self._get_zipfile().namelist())
         else:
-            raise IOError('Path must point to a directory or zip')
+            raise IOError("Path must point to a directory or zip")
 
-        # Compute the list of all images in the folder
-        PIL.Image.init()
-        self._image_fnames = sorted(fname for fname in self._all_fnames if self._file_ext(fname) in PIL.Image.EXTENSION)
+        self._image_fnames = sorted(fname for fname in self._all_fnames if self._file_ext(fname) == ".pickle" and self._split in fname)
         if len(self._image_fnames) == 0:
-            raise IOError('No image files found in the specified path')
+            raise IOError("No image files found in the specified path")
 
         name = os.path.splitext(os.path.basename(self._path))[0]
         raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0).shape)
-        if resolution is not None and (raw_shape[2] != resolution or raw_shape[3] != resolution): # check on the image size
-            raise IOError('Image files do not match the specified resolution')
+        if resolution is not None and (raw_shape[2] != resolution or raw_shape[3] != resolution):
+            raise IOError("Image files do not match the specified resolution")
         super().__init__(name=name, raw_shape=raw_shape, **super_kwargs)
 
     @staticmethod
@@ -203,17 +224,16 @@ class ImageFolderDataset(Dataset):
         return os.path.splitext(fname)[1].lower()
 
     def _get_zipfile(self):
-        assert self._type == 'zip'
+        assert self._type == "zip"
         if self._zipfile is None:
             self._zipfile = zipfile.ZipFile(self._path)
         return self._zipfile
 
     def _open_file(self, fname):
-        if self._type == 'dir':
-            return open(os.path.join(self._path, fname), 'rb')
-        if self._type == 'zip':
-            return self._get_zipfile().open(fname, 'r')
-        return None
+        if self._type == "zip":
+            return self._get_zipfile().open(fname, "r")
+        else:
+            raise IOError("Support only zip.")
 
     def close(self):
         try:
@@ -227,28 +247,33 @@ class ImageFolderDataset(Dataset):
 
     def _load_raw_image(self, raw_idx):
         fname = self._image_fnames[raw_idx]
+
         with self._open_file(fname) as f:
-            if pyspng is not None and self._file_ext(fname) == '.png':
-                image = pyspng.load(f.read())
-            else:
-                image = np.array(PIL.Image.open(f))
-        if image.ndim == 2:
-            image = image[:, :, np.newaxis] # HW => HWC
-        image = image.transpose(2, 0, 1) # HWC => CHW
-        return image
+            p = pickle.load(f)
+
+        assert len(self._modalities) > 0
+        s = p[self._modalities[0]]
+
+        out_image = np.zeros((len(self._modalities), s.shape[0], s.shape[1])).astype("float32") # compose the multichannel image
+        for i, _modality in enumerate(self._modalities):
+            x = p[_modality]
+            x = x.astype("float32")
+            out_image[i, :, :] = x
+        return out_image # CHW
 
     def _load_raw_labels(self):
-        fname = 'dataset.json'
+        fname = "dataset.json"
         if fname not in self._all_fnames:
             return None
         with self._open_file(fname) as f:
-            labels = json.load(f)['labels']
+            labels = json.load(f)["labels"]
         if labels is None:
             return None
         labels = dict(labels)
-        labels = [labels[fname.replace('\\', '/')] for fname in self._image_fnames]
+        labels = [labels[fname.replace("\\", "/")] for fname in self._image_fnames]
         labels = np.array(labels)
         labels = labels.astype({1: np.int64, 2: np.float32}[labels.ndim])
         return labels
+# CUSTOMIZING END
 
 #----------------------------------------------------------------------------

@@ -17,8 +17,8 @@ import tempfile
 import torch
 
 import dnnlib
-from training import training_loop, training_loop_mi
-from metrics import metric_main
+from training import training_loop_mi_multimodal
+from metrics import metric_main_mi_multimodal
 from torch_utils import training_stats
 from torch_utils import custom_ops
 
@@ -45,7 +45,7 @@ def subprocess_fn(rank, c, temp_dir):
 
     # Execute training loop.
     # CUSTOMIZING START
-    training_loop_mi.training_loop(rank=rank, **c)
+    training_loop_mi_multimodal.training_loop(rank=rank, **c)
     # CUSTOMIZING END
 
 #----------------------------------------------------------------------------
@@ -74,12 +74,15 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Training duration:   {c.total_kimg} kimg')
     print(f'Dataset path:        {c.training_set_kwargs.path}')
     # CUSTOMIZING START
-    print(f'Dataset dtype:        {c.training_set_kwargs.dtype}')
+    print(f'Dataset dtype:       {c.training_set_kwargs.dtype}')
+    print(f'Split:               {c.training_set_kwargs.split}')
+    print(f'Modalities:          {c.training_set_kwargs.modalities}')
+    print(f'Metric Cache:        {c.metrics_cache}')
     # CUSTOMIZING STOP
     print(f'Dataset size:        {c.training_set_kwargs.max_size} images')
     print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
-    print(f'Dataset x-flips:     {c.training_set_kwargs.xflip}')
+    print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
     print()
 
     # Dry run?
@@ -104,21 +107,12 @@ def launch_training(c, desc, outdir, dry_run):
 
 #----------------------------------------------------------------------------
 
-def init_dataset_kwargs(data):
-    try:
-        dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
-        dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs) # Subclass of training.dataset.Dataset.
-        dataset_kwargs.resolution = dataset_obj.resolution # Be explicit about resolution.
-        dataset_kwargs.use_labels = dataset_obj.has_labels # Be explicit about labels.
-        dataset_kwargs.max_size = len(dataset_obj) # Be explicit about dataset size.
-        return dataset_kwargs, dataset_obj.name
-    except IOError as err:
-        raise click.ClickException(f'--data: {err}')
-
 # CUSTOMIZING START
-def init_dataset_mi_kwargs(data, dtype):
+def init_dataset_mi_multimodal_kwargs(data, dtype, split, modalities):
+    # Convert string to list.
+    modalities = (modalities.replace(" ", "").split(","))
     try:
-        dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset_mi.ImageFolderDataset', path=data, dtype=dtype, use_labels=True, max_size=None, xflip=False) # create attributes for the Dataset class
+        dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset_mi_multimodal.CustomImageFolderDataset', path=data, dtype=dtype, use_labels=True, max_size=None, xflip=False, split=split, modalities=modalities) # create attributes for the Dataset class
         dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs) # Subclass of training.dataset.Dataset.
         dataset_kwargs.resolution = dataset_obj.resolution # Be explicit about resolution.
         dataset_kwargs.use_labels = dataset_obj.has_labels # Be explicit about labels.
@@ -144,10 +138,14 @@ def parse_comma_separated_list(s):
 
 # Required.
 @click.option('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
-@click.option('--cfg',          help='Base configuration',                                      type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
+@click.option('--cfg',          help='Base configuration',                                       type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
 @click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=str, required=True)
 # CUSTOMIZING START-ADDING NEW PARAMETER dype
 @click.option('--dtype',        help='Dynamic range of images',                                 type=str, default='float32')
+@click.option('--modalities',   help="Modalities for StyleGAN",   metavar="STRING",             type=str, default="MR_nonrigid_CT,MR_MR_T2",  required=True)
+@click.option('--dataset',      help="Dataset name",   metavar="STRING",                        type=str, default="Pelvis_2.1",   required=True)
+@click.option('--split',        help="Validation split",   metavar="STRING",                    type=str, default="train",   required=True)
+@click.option('--metrics_cache',help="Use cache to upload precomputed features for real images",type=bool,default=False, required=True)
 # CUSTOMIZING END
 @click.option('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
 @click.option('--batch',        help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
@@ -155,13 +153,13 @@ def parse_comma_separated_list(s):
 
 # Optional features.
 @click.option('--cond',         help='Train conditional model', metavar='BOOL',                 type=bool, default=False, show_default=True)
-@click.option('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                  type=bool, default=False, show_default=True)
+@click.option('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                   type=bool, default=False, show_default=True)
 @click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
-@click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                 type=click.IntRange(min=0), default=0, show_default=True)
+@click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
 
 # Misc hyperparameters.
-@click.option('--p',            help='Probability for --aug=fixed', metavar='FLOAT',            type=click.FloatRange(min=0, max=1), default=0.2, show_default=True)
+@click.option('--p',            help='Probability for --aug=fixed', metavar='FLOAT',             type=click.FloatRange(min=0, max=1), default=0.2, show_default=True)
 @click.option('--target',       help='Target value for --aug=ada', metavar='FLOAT',             type=click.FloatRange(min=0, max=1), default=0.6, show_default=True)
 @click.option('--batch-gpu',    help='Limit batch size per GPU', metavar='INT',                 type=click.IntRange(min=1))
 @click.option('--cbase',        help='Capacity multiplier', metavar='INT',                      type=click.IntRange(min=1), default=32768, show_default=True)
@@ -188,23 +186,37 @@ def main(**kwargs):
     "Alias-Free Generative Adversarial Networks".
 
     Examples:
+    \b Train StyleGAN2 for Pelvis_2.1 at 256x256 resolution using 2 GPUs.
+    python train.py
+        --outdir=/home/lorenzo/Gan\ tracker/reports --cfg=stylegan2 \\
+        --data=/home/lorenzo/Gan\ tracker/data/interim/Pelvis_2.1/Pelvis_2.1-num-375_train-0.70_val-0.20_test-0.10.zip \\
+        --dataset=Pelvis_2.1 --dtype=float32 --modalities=MR_nonrigid_CT,MR_MR_T2 \\
+        --gpus=2 --batch=32 --gamma=0.4096 --mirror=1 --kimg=5000 --glr=0.0025 --dlr=0.0025 --snap=5 --cbase=16384
 
     \b
-    # Train StyleGAN3-T for AFHQv2 using 8 GPUs.
-    python train.py --outdir=~/training-runs --cfg=stylegan3-t --data=~/datasets/afhqv2-512x512.zip \\
-        --gpus=8 --batch=32 --gamma=8.2 --mirror=1
+    # Train StyleGAN2 for IBSR18 dataset at 256x256 resolution using 1 GPU.
+    python scripts/train_medical.py --dataset ibsr18 --outdir=database --cfg=stylegan2 \\
+        --data=database/ibsr18/num-18_train-0.80_val-0.20_test-0.00.zip --gpus=1 --gamma=2 --mirror=1 \\
+        --aug ada --workers 1 --snap 10 --cmax 512 --cbase 16384 --batch 16 --out_modal t1,truth_label
 
     \b
-    # Fine-tune StyleGAN3-R for MetFaces-U using 1 GPU, starting from the pre-trained FFHQ-U pickle.
-    python train.py --outdir=~/training-runs --cfg=stylegan3-r --data=~/datasets/metfacesu-1024x1024.zip \\
-        --gpus=8 --batch=32 --gamma=6.6 --mirror=1 --kimg=5000 --snap=5 \\
-        --resume=https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/stylegan3-r-ffhqu-1024x1024.pkl
-
-    \b
-    # Train StyleGAN2 for FFHQ at 1024x1024 resolution using 8 GPUs.
-    python train.py --outdir=~/training-runs --cfg=stylegan2 --data=~/datasets/ffhq-1024x1024.zip \\
-        --gpus=8 --batch=32 --gamma=10 --mirror=1 --aug=noaug
+    # Train StyleGAN2 for Brats20 dataset at 256x256 resolution using 1 GPU.
+    python scripts/train_medical.py --outdir=database --dataset=brats20 --cfg=stylegan2 \\
+	--data=database/brats20/num-200_train-0.80_val-0.20_test-0.00.zip --gpus=1 --gamma=2 --mirror=1 \\
+	--aug ada --workers 1 --snap 10 --cmax 512 --cbase 16384 --batch 20 --out_modal t1,t2,flair,t1ce,truth_label"
     """
+
+    # CUSTOMIZING START
+    import shutil
+    cache_dir = dnnlib.util.take_cache_dir_path()
+    cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
+    if os.path.isdir(cache_dir_metric):
+        #user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \ny/n") # todo remove the comment
+        user_input = 'n'
+        if user_input == 'y':
+            shutil.rmtree(cache_dir_metric)
+            print('Deleted.')
+    # CUSTOMIZING STOP
 
     # Initialize config.
     opts = dnnlib.EasyDict(kwargs) # Command line arguments.
@@ -218,7 +230,11 @@ def main(**kwargs):
 
     # Training set.
     # CUSTOMIZING START
-    c.training_set_kwargs, dataset_name = init_dataset_mi_kwargs(data=opts.data, dtype=opts.dtype)
+    c.training_set_kwargs, dataset_name = init_dataset_mi_multimodal_kwargs(data=opts.data, dtype=opts.dtype, split=opts.split, modalities=opts.modalities)
+    # CUSTOMIZING END
+
+    # CUSTOMIZING START
+    c.metrics_cache = opts.metrics_cache
     # CUSTOMIZING END
 
     if opts.cond and not c.training_set_kwargs.use_labels:
@@ -252,8 +268,10 @@ def main(**kwargs):
         raise click.ClickException('--batch must be a multiple of --gpus times --batch-gpu')
     if c.batch_gpu < c.D_kwargs.epilogue_kwargs.mbstd_group_size:
         raise click.ClickException('--batch-gpu cannot be smaller than --mbstd')
-    if any(not metric_main.is_valid_metric(metric) for metric in c.metrics):
-        raise click.ClickException('\n'.join(['--metrics can only contain the following values:'] + metric_main.list_valid_metrics()))
+    # CUSTOMIZING START
+    if any(not metric_main_mi_multimodal.is_valid_metric(metric) for metric in c.metrics):
+        raise click.ClickException('\n'.join(['--metrics can only contain the following values:'] + metric_main_mi_multimodal.list_valid_metrics()))
+    # CUSTOMIZING END
 
     # Base configuration.
     c.ema_kimg = c.batch_size * 10 / 32
@@ -278,13 +296,11 @@ def main(**kwargs):
     # Augmentation.
     if opts.aug != 'noaug':
         # CUSTOMIZING START -> deactivate some colour based augmentations --> brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0
-        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1,
-                                           scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1,
-                                           hue=1, saturation=1)
-        # if opts.dtype == 'uint8':
-        #     c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1)
-        # else:
-        #     c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0)
+        len_modalities = len(c.training_set_kwargs.modalities)
+        if opts.dtype == 'uint8' and len_modalities == 1:
+            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1)
+        else:
+            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0)
         # CUSTOMIZING END
         if opts.aug == 'ada':
             c.ada_target = opts.target
@@ -305,10 +321,16 @@ def main(**kwargs):
     if opts.nobench:
         c.cudnn_benchmark = False
 
+    # CUSTOMIZING START
+    s_modalities = opts.modalities.replace(" ", "").split(",")
+    s_modalities = ",".join(s_modalities)
+    # Update output directory.
+    opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f'{opts.cfg:s}-{dataset_name:s}-gpus{c.num_gpus:d}-batch{c.batch_size:d}-gamma{c.loss_kwargs.r1_gamma:g}'
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}-"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
+    # CUSTOMIZING STOP
 
     # Launch.
     launch_training(c=c, desc=desc, outdir=opts.outdir, dry_run=opts.dry_run)

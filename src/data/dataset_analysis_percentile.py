@@ -36,9 +36,8 @@ from src.utils import util_general
 
 # Configuration file
 print("Upload configuration file")
-with open('./configs/pelvic_preprocessing.yaml') as file:
+with open('./configs/pelvis_preprocessing.yaml') as file:
     cfg = yaml.load(file, Loader=yaml.FullLoader)
-id_exp = cfg['id_exp']
 worker = cfg['device']['worker']
 source_dataset_name = cfg['data']['source_dataset']
 res = cfg['data']['image_size']

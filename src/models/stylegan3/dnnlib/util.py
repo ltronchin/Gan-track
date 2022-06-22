@@ -121,6 +121,19 @@ def set_cache_dir(path: str) -> None:
     global _dnnlib_cache_dir
     _dnnlib_cache_dir = path
 
+# CUSTOMIZING START
+def take_cache_dir_path() -> str:
+    if _dnnlib_cache_dir is not None:
+        return os.path.join(_dnnlib_cache_dir)
+    if 'DNNLIB_CACHE_DIR' in os.environ:
+        return os.path.join(os.environ['DNNLIB_CACHE_DIR'])
+    if 'HOME' in os.environ:
+        return os.path.join(os.environ['HOME'], '.cache', 'dnnlib')
+    if 'USERPROFILE' in os.environ:
+        return os.path.join(os.environ['USERPROFILE'], '.cache', 'dnnlib')
+    return os.path.join(tempfile.gettempdir(), '.cache', 'dnnlib')
+# CUSTOMIZING STOP
+
 def make_cache_dir_path(*paths: str) -> str:
     if _dnnlib_cache_dir is not None:
         return os.path.join(_dnnlib_cache_dir, *paths)

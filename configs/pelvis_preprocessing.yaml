@@ -26,7 +26,7 @@ data:
     MR_nonrigid_CT:
       range:
         min: -1000
-        max: 1000
+        max: 2000
       upper_percentile:
       lower_percentile:
 
@@ -40,7 +40,7 @@ data:
     MR_MR_T2:
       range:
         min: 0
-        max: 3000
+        max: 1900
       upper_percentile:
       lower_percentile:
 

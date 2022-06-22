@@ -223,7 +223,7 @@ def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # resc
     folders = glob.glob(os.path.join(source, "*"))
     try:
         pool = Pool()  # Multithreading
-        l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape))) # todo check multiprocessing
+        l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape)))
         pool.close()
     except:
         for idx_pat in range(len(folders)):
@@ -414,7 +414,7 @@ def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test
     return fold_list
 
 
-def write_to_zip(source: str, dest=None, dataset="Pelvic_2.1", max_patients=30, split=None):
+def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, split=None): # todo limit the patients
     if split is None:
         split = {"train": 0.8, "val": 0.2, "test": 0}
 

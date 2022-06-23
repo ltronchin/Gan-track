@@ -132,7 +132,7 @@ def take_cache_dir_path() -> str:
     if 'USERPROFILE' in os.environ:
         return os.path.join(os.environ['USERPROFILE'], '.cache', 'dnnlib')
     return os.path.join(tempfile.gettempdir(), '.cache', 'dnnlib')
-# CUSTOMIZING STOP
+# CUSTOMIZING END
 
 def make_cache_dir_path(*paths: str) -> str:
     if _dnnlib_cache_dir is not None:

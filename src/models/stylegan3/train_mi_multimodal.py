@@ -78,7 +78,7 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Split:               {c.training_set_kwargs.split}')
     print(f'Modalities:          {c.training_set_kwargs.modalities}')
     print(f'Metric Cache:        {c.metrics_cache}')
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
     print(f'Dataset size:        {c.training_set_kwargs.max_size} images')
     print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
@@ -140,7 +140,7 @@ def parse_comma_separated_list(s):
 @click.option('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
 @click.option('--cfg',          help='Base configuration',                                       type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
 @click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=str, required=True)
-# CUSTOMIZING START-ADDING NEW PARAMETER dype
+# CUSTOMIZING START-ADDING NEW PARAMETERs
 @click.option('--dtype',        help='Dynamic range of images',                                 type=str, default='float32')
 @click.option('--modalities',   help="Modalities for StyleGAN",   metavar="STRING",             type=str, default="MR_nonrigid_CT,MR_MR_T2",  required=True)
 @click.option('--dataset',      help="Dataset name",   metavar="STRING",                        type=str, default="Pelvis_2.1",   required=True)
@@ -191,19 +191,7 @@ def main(**kwargs):
         --outdir=/home/lorenzo/Gan\ tracker/reports --cfg=stylegan2 \\
         --data=/home/lorenzo/Gan\ tracker/data/interim/Pelvis_2.1/Pelvis_2.1-num-375_train-0.70_val-0.20_test-0.10.zip \\
         --dataset=Pelvis_2.1 --dtype=float32 --modalities=MR_nonrigid_CT,MR_MR_T2 \\
-        --gpus=2 --batch=32 --gamma=0.4096 --mirror=1 --kimg=5000 --glr=0.0025 --dlr=0.0025 --snap=5 --cbase=16384
-
-    \b
-    # Train StyleGAN2 for IBSR18 dataset at 256x256 resolution using 1 GPU.
-    python scripts/train_medical.py --dataset ibsr18 --outdir=database --cfg=stylegan2 \\
-        --data=database/ibsr18/num-18_train-0.80_val-0.20_test-0.00.zip --gpus=1 --gamma=2 --mirror=1 \\
-        --aug ada --workers 1 --snap 10 --cmax 512 --cbase 16384 --batch 16 --out_modal t1,truth_label
-
-    \b
-    # Train StyleGAN2 for Brats20 dataset at 256x256 resolution using 1 GPU.
-    python scripts/train_medical.py --outdir=database --dataset=brats20 --cfg=stylegan2 \\
-	--data=database/brats20/num-200_train-0.80_val-0.20_test-0.00.zip --gpus=1 --gamma=2 --mirror=1 \\
-	--aug ada --workers 1 --snap 10 --cmax 512 --cbase 16384 --batch 20 --out_modal t1,t2,flair,t1ce,truth_label"
+        --gpus=2 --batch=32 --gamma=0.4096 --mirror=1 --kimg=5000 --glr=0.0025 --dlr=0.0025 --snap=5 --cbase=16384 --metrics_cache=True
     """
 
     # CUSTOMIZING START
@@ -216,7 +204,7 @@ def main(**kwargs):
         if user_input == 'y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
 
     # Initialize config.
     opts = dnnlib.EasyDict(kwargs) # Command line arguments.
@@ -327,10 +315,10 @@ def main(**kwargs):
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}-"
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
 
     # Launch.
     launch_training(c=c, desc=desc, outdir=opts.outdir, dry_run=opts.dry_run)
@@ -338,13 +326,14 @@ def main(**kwargs):
 #----------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # CUSTOMIZING START
     # FOR DEBUG REASON:
     # RuntimeError:Ninja is required to load C++ extension #167
     # Solutions: The subprocess does not include the lib path of conda environments. So manually set the environments in the script (https://github.com/zhanghang1989/PyTorch-Encoding/issues/167)
     my_env = os.environ.copy()
     my_env["PATH"] = "/home/lorenzo/miniconda3/envs/stylegan3/bin:" + my_env["PATH"]
     os.environ.update(my_env)
-
+    # CUSTOMIZING END
     main() # pylint: disable=no-value-for-parameter
 
 #----------------------------------------------------------------------------

@@ -75,7 +75,7 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Dataset path:        {c.training_set_kwargs.path}')
     # CUSTOMIZING START
     print(f'Dataset dtype:        {c.training_set_kwargs.dtype}')
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
     print(f'Dataset size:        {c.training_set_kwargs.max_size} images')
     print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')

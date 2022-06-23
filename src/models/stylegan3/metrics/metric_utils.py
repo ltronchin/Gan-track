@@ -23,7 +23,7 @@ import dnnlib
 class MetricOptions:
     # CUSTOMIZING START
     def __init__(self, G=None, G_kwargs={}, dataset_kwargs={}, num_gpus=1, rank=0, device=None, progress=None, cache=True, idx_mode=None):
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
         assert 0 <= rank < num_gpus
         self.G              = G
         self.G_kwargs       = dnnlib.EasyDict(G_kwargs)
@@ -35,7 +35,7 @@ class MetricOptions:
         self.cache          = cache
         # CUSTOMIZING START
         self.idx_mode     = idx_mode
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
 
 #----------------------------------------------------------------------------
 
@@ -245,7 +245,7 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_m
                 img = img.clamp(0, 255).to(torch.uint8)
                 temp.append(img.unsqueeze(dim=0))
             images = torch.cat(temp)
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
 
         # CUSTOMIZING START -- take care of the multimodal nature of the input
         if idx_mode is not None:
@@ -255,7 +255,7 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_m
         if x.shape[1] == 1:
             x = x.repeat([1, 3, 1, 1]) # make a three channel tensor
         features = detector(x.to(opts.device), **detector_kwargs)
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
         stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
         progress.update(stats.num_items)
 
@@ -301,7 +301,7 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, idx
         if x.shape[1] == 1:
             x = x.repeat([1, 3, 1, 1])  # make a three channel tensor
         features = detector(x, **detector_kwargs)
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
         stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
         progress.update(stats.num_items)
     return stats

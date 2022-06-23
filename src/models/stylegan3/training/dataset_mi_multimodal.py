@@ -51,7 +51,7 @@ class Dataset(torch.utils.data.Dataset):
         if modalities is None:
             modalities = ['MR_nonrigid_CT', 'MR_MR_T2']
         self._modalities = modalities
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
         self._raw_shape = list(raw_shape)
         self._use_labels = use_labels
         self._raw_labels = None

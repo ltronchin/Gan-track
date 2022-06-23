@@ -63,7 +63,7 @@ def read_image(in_file, image_shape=None, interpolation='linear', crop=None):
         image_shape = (image_shape[0], image_shape[0], old_shape[-1])
     elif len(image_shape) == 2:
         image_shape = (image_shape[0], image_shape[1], old_shape[-1])
-    # CUSTOMIZING STOP - ADDED BY Lorenzo
+    # CUSTOMIZING END - ADDED BY Lorenzo
 
     image = fix_shape(image)
     if crop:

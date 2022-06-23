@@ -26,7 +26,7 @@ from torch_utils.ops import grid_sample_gradfix
 import legacy
 # CUSTOMIZING START
 from metrics import metric_main_mi_multimodal
-# CUSTOMIZING STOP
+# CUSTOMIZING END
 
 # CUSTOMIZING START
 #----------------------------------------------------------------------------
@@ -57,7 +57,7 @@ def setup_snapshot_image_grid(training_set, random_seed=0):
 
     # CUSTOMIZING START
     gw = int(gw - (gw % len(training_set._modalities))) # adapt the dimensions of output image
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
 
     # No labels => show random subset of training samples.
     if not training_set.has_labels:
@@ -66,7 +66,7 @@ def setup_snapshot_image_grid(training_set, random_seed=0):
         # CUSTOMIZING START
         g = int(gw * gh / (len(training_set._modalities)))
         grid_indices = [all_indices[i % len(all_indices)] for i in range(g)]
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
     else:
         # Group training samples by label.
         label_groups = dict() # label => [idx, ...]
@@ -94,7 +94,7 @@ def setup_snapshot_image_grid(training_set, random_seed=0):
     images, labels = zip(*[training_set[i] for i in grid_indices])
     images = convert_to_grayscale(images, hi=255.0, low=0.0)
     return (gw, gh), images, np.stack(labels)
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
 
 #----------------------------------------------------------------------------
 # CUSTOMIZING START
@@ -133,7 +133,7 @@ def training_loop(
     metrics                 = [],       # Metrics to evaluate during training.
     # CUSTOMIZING START
     metrics_cache           = False,    # Options to upload the cache real features for FID
-    # CUSTOMIZING STOP
+    # CUSTOMIZING END
     random_seed             = 0,        # Global random seed.
     num_gpus                = 1,        # Number of GPUs participating in the training.
     rank                    = 0,        # Rank of the current process in [0, num_gpus[.
@@ -256,14 +256,14 @@ def training_loop(
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
         # CUSTOMIZING START
         save_image_grid(images, os.path.join(run_dir, 'reals.png'), grid_size=grid_size)
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
         grid_z = torch.randn([labels.shape[0], G.z_dim], device=device).split(batch_gpu)
         grid_c = torch.from_numpy(labels).to(device).split(batch_gpu)
         images = torch.cat([G_ema(z=z, c=c, noise_mode='const').cpu() for z, c in zip(grid_z, grid_c)]).numpy()
         # CUSTOMIZING START
         images = convert_to_grayscale(images, low=-1.0,  hi=1.0) # from [-1 1] to [0 255]
         save_image_grid(images, os.path.join(run_dir, 'fakes_init.png'), grid_size=grid_size)
-        # CUSTOMIZING STOP
+        # CUSTOMIZING END
 
     # Initialize logs.
     if rank == 0:
@@ -395,7 +395,7 @@ def training_loop(
             # CUSTOMIZING START
             images = convert_to_grayscale(images, low=-1.0, hi=1.0) # from [-1 1] to [0 255]
             save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.png'), grid_size=grid_size)
-            # CUSTOMIZING STOP
+            # CUSTOMIZING END
 
         # Save network snapshot.
         snapshot_pkl = None
@@ -441,7 +441,7 @@ def training_loop(
                     if rank == 0:
                         metric_main_mi_multimodal.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
                     stats_metrics.update(result_dict.results)
-                # CUSTOMIZING STOP
+                # CUSTOMIZING END
         del snapshot_data # conserve memory
 
         # Collect statistics.

@@ -426,14 +426,14 @@ def training_loop(
                 if len(training_set._modalities) > 1:
                     result_dict_modalities = {}
                     for idx_mode, mode in enumerate(training_set._modalities):
-                        print(f'...mode:{mode}')
+                        # print(f'Modality:{mode}')
                         result_dict = metric_main_mi_multimodal.calc_metric(metric=metric, G=snapshot_data['G_ema'],  dataset_kwargs=training_set_kwargs,
                             num_gpus=num_gpus, rank=rank, device=device,  cache=metrics_cache, idx_mode=idx_mode
                         )
                         if rank == 0:
                             metric_main_mi_multimodal.report_metric(result_dict, mode, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
                         result_dict_modalities[metric + '__' + mode] = list(result_dict.results.values())[0]
-                    stats_metrics.update(result_dict_modalities) # todo should work but check
+                    stats_metrics.update(result_dict_modalities) # For Tensorboard
                 else:
                     result_dict = metric_main_mi_multimodal.calc_metric(metric=metric, G=snapshot_data['G_ema'],  dataset_kwargs=training_set_kwargs,
                         num_gpus=num_gpus, rank=rank, device=device, cache=metrics_cache

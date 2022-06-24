@@ -21,6 +21,7 @@ from typing import Any, Optional, Tuple, Union
 import click
 
 import numpy as np
+import pandas as pd
 import PIL.Image
 
 
@@ -33,12 +34,81 @@ from itertools import repeat
 import nibabel as nib
 from multiprocessing import Pool
 import shutil
-from random import shuffle
+import random
 
 import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
 import src.engine.utils.volume as volume_utils
 import src.engine.utils.io_utils as io_utils
+
+#----------------------------------------------------------------------------
+
+def sanity_check_fllename(data_dir):
+    # Patient filename desiderata example "Pelvis_2857,MR Pelvis_2857,MR"
+    def count_chars(s):
+        result = 0
+        for _ in s:
+            result += 1
+        return result
+
+    def find_chars(s, ch):
+        lst = []
+        for pos,char in enumerate(s):
+            if char == ch:
+                lst.append(pos)
+        return lst
+
+    # Sanity check
+    list_patients = np.asarray(os.listdir(data_dir))
+    mask = np.where(np.asarray([count_chars(x.split(',')[-1]) > 4 for x in list_patients], dtype=np.uint8) == 1 )
+    list_patients_typo = list_patients[mask]
+
+    print(f"Finded {list_patients_typo.shape[0]} patients with typo in the file name.")
+    list_patient_fixed = []
+    for patient_typo in list_patients_typo:
+        indexes = find_chars(patient_typo, '_')
+        patient_fixed_temp= patient_typo[:indexes[1]] + ',' + patient_typo[indexes[1]+1:]
+        patient_fixed = patient_fixed_temp[:indexes[-1]] + ',' + patient_fixed_temp[indexes[-1] + 1:]
+        print(f"{patient_typo} ----> {patient_fixed}")
+        list_patient_fixed.append(patient_fixed)
+        os.rename(os.path.join(data_dir, patient_typo), os.path.join(data_dir, patient_fixed))
+
+    # Double check
+    mask = np.where(np.asarray([count_chars(x.split(',')[-1]) > 4 for x in os.listdir(data_dir)], dtype=np.uint8) ==1)[0]
+    if len(mask) != 0:
+        print("Patient with typo in the name after cleaning")
+        print(list_patient_fixed[mask])
+    else:
+        print("Sanity check completed")
+
+def export_statistics(dataset_name, data_dir, reports_dir):
+
+    column_names = ["id_patient", "sex", "cancer_type", "additional_info"]
+    df = pd.DataFrame(columns = column_names)
+
+    list_patients = np.asarray(os.listdir(data_dir))
+    for x in list_patients:
+        id_patient = x.split(',')[0].split('_')[-1]
+
+        sex = x.split(',')[-1][0]
+        cancer_type = x.split(',')[-1][1]
+        try:
+            addinfo = x.split(',')[-1][2:]
+        except IndexError:
+            addinfo = ''
+
+        df.loc[len(df.index)] = [id_patient, sex, cancer_type,addinfo]
+    df.to_excel(os.path.join(reports_dir,f'info_{dataset_name}.xlsx'), index = False)
+
+# todo correzione typo nomi pazienti d'appertutto
+# todo associare label a tipi di cancro da 1 a 5. Nota Si può pensare anche a combinare label con la somma se non si vuole considerare solo la tipologia di cancro
+# P --> 1
+# L --> 2
+# ...
+# todo funzione che crea gli split a priori
+# todo adattare funzione snap.zip in modo che se riceve un file di testo con lo split segue quello, altrimenti lo genera
+# todo selezione randomica dei pazienti bilanciata con trait_test_split
+# todo split in train val e test bilanciato
 
 #----------------------------------------------------------------------------
 class EasyDict(dict):
@@ -105,13 +175,13 @@ def parse_comma_separated_list(s):
 
 #----------------------------------------------------------------------------
 
-def open_image_folder_patients(source_dir, *, max_patients: Optional[int], dataset):
+def open_image_folder_patients(source_dir):
     input_patients = glob.glob(os.path.join(source_dir, "*"))
 
     # Load labels.
     labels = {}
 
-    max_idx = maybe_min(len(input_patients), max_patients)
+    max_idx = len(input_patients) # maybe_min(len(input_patients), max_patients)
 
     def iterate_images():
         for idx, patient in enumerate(input_patients):
@@ -144,9 +214,9 @@ def open_image_folder_patients(source_dir, *, max_patients: Optional[int], datas
 
 #----------------------------------------------------------------------------
 
-def open_dataset_patient(source, *, max_patients: Optional[int], dataset):
+def open_dataset_patient(source):
     if os.path.isdir(source):
-        return open_image_folder_patients(source, max_patients=max_patients, dataset=dataset)
+        return open_image_folder_patients(source)
     elif os.path.isfile(source):
         assert False, "unknown archive type"
     else:
@@ -161,7 +231,7 @@ def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list):
     # Cycle on patients
     for pat in patients:
         fname_pat = path_utils.get_filename_without_extension(pat)
-        print(f"Patient: {pat}")
+        print(f"\nPatient: {pat}")
         output_dir = os.path.join(dest, fname_pat)
         if os.path.exists(output_dir):
             print(f"{output_dir} already exist! Skip this patient.")
@@ -314,15 +384,10 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
 def convert_dataset_mi(
     source: str,
     dest: str,
-    max_patients: Optional[int],
-    dataset: str,
-    is_overwrite=False,
-):
+    is_overwrite=False):
 
     # Open normalized folder.
-    num_files, input_iter = open_dataset_patient(
-        source, max_patients=max_patients, dataset=dataset
-    )
+    num_files, input_iter = open_dataset_patient(source)
 
     # Create a temp folder to be save into zipfile
     temp = os.path.join(dest, "temp")
@@ -379,7 +444,7 @@ def convert_dataset_mi(
 
 def split_list(input_list, split=0.8, shuffle_list=True):
     if shuffle_list:
-        shuffle(input_list)
+        random.shuffle(input_list)
     n_training = int(len(input_list) * split)
     training = input_list[:n_training]
     testing = input_list[n_training:]
@@ -388,7 +453,7 @@ def split_list(input_list, split=0.8, shuffle_list=True):
 
 def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test=False):
     if shuffle_list and not is_test:
-        shuffle(input_list)
+        random.shuffle(input_list)
     if is_test:
         print(input_list)
     n_valid_sample = round(len(input_list) / 5)
@@ -464,9 +529,9 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 
         # Shuffle and take max_patients samples from dataset.
         patients = sorted(patients)
-        shuffle(patients)
-
+        random.Random(max_patients).shuffle(patients) # comment this line if you don't know to change the order fo the patients across the experiments
         sample_patients = patients[:max_patients]
+
         train_patients, val_test_patients = split_list(sample_patients, train_split)
         val_patients, test_patients = split_list(val_test_patients, val_split / (val_split + test_split))
 
@@ -500,6 +565,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--reports_dir', help='Output directory for reports', required=True, metavar='PATH')
 @click.option('--dataset', help='Name of the input dataset', required=True, type=str, default='Pelvis_2.1')
 @click.option('--resolution', help='Resolution of the processed images', required=True, type=int, default=256)
+@click.option('--max_patients', help='Number of patients to preprocess', required=True, type=int, default=100000)
 @click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
 @click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
 @click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
@@ -518,7 +584,7 @@ def prepare_Pelvis_2_1(**kwargs):
     run_module = os.path.basename(__file__)
     run_id = util_general.get_next_run_id_local(os.path.join('log_run', opts.dataset), run_module)  # GET run id
     # Create log dir
-    run_name = "{0:05d}--{1}".format(run_id, run_module)
+    run_name = "{0:05d}--{1}--{2}".format(run_id, run_module, opts.processing_step)
     log_dir = os.path.join('log_run', opts.dataset, run_name)
     util_general.create_dir(log_dir)
     # Save the configuration file
@@ -543,9 +609,10 @@ def prepare_Pelvis_2_1(**kwargs):
 
     # Files and Directories
     print('Create file and directory')
-    data_dir = os.path.join(opts.data_dir, opts.dataset)
+    data_dir = os.path.join(opts.data_dir)
     interim_dir = os.path.join(opts.interim_dir, opts.dataset)
-    reports_dir = os.path.join(opts.reports_dir, opts.dataset, run_name)
+    reports_dir = os.path.join(opts.reports_dir, opts.dataset)
+    path_utils.make_dir(reports_dir)
 
     # Useful print
     print()
@@ -557,49 +624,51 @@ def prepare_Pelvis_2_1(**kwargs):
     print(f'Dataset resolution:  {opts.resolution}')
     print(f'Modes list:          {list(modes_args.keys())}')
     print(f'Modes args:          {modes_args}')
+    print(f'Max patients:        {opts.max_patients}')
     print(f'Processing step:     {opts.processing_step}')
     print(f'Validation method:   {opts.validation_method}')
     print(f'Validation split:    {opts.validation_split}')
     print()
 
+    sanity_check_fllename(data_dir)
+
     # From dicom to nifti
-    dest_dir_nifti = os.path.join(interim_dir, 'nifti_volumes')
     if opts.processing_step == 'process_dicom_2_nifti':
-        print(f"\nConvert to nifti, output folder: {dest_dir_nifti}")
-        convert_dicom_2_nifti(source=data_dir, dest=dest_dir_nifti, modes_to_preprocess=list(modes_args.keys()))
+        dest_dir = os.path.join(interim_dir, 'nifti_volumes')
+        print(f"\nConvert to nifti, output folder: {dest_dir}")
+        convert_dicom_2_nifti(source=data_dir, dest=dest_dir, modes_to_preprocess=list(modes_args.keys()))
 
     # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
-    dest_dir_nifti_resized = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}')
     if opts.processing_step == 'process_nifti_resized':
-        print(f"\nResize to resolution {opts.resolution}, output folder: {dest_dir_nifti_resized}")
-        resize_nifti_folder(source=dest_dir_nifti, dest=dest_dir_nifti_resized, image_shape=(opts.resolution, opts.resolution))
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}')
+        print(f"\nResize to resolution {opts.resolution}, output folder: {dest_dir}")
+        resize_nifti_folder(source=data_dir, dest=dest_dir, image_shape=(opts.resolution, opts.resolution))
 
     # Normalize each volume
-    dest_dir_nifti_resized_normalized = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_normalized')
     if opts.processing_step == 'process_nifti_normalized':
-        print(f"\nNormalize each volume, output folder: {dest_dir_nifti_resized_normalized}")
-        normalize_folder(source=dest_dir_nifti_resized, dest=dest_dir_nifti_resized_normalized, dataset=opts.dataset, modes_args=cfg['data']['modes'])
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_normalized')
+        print(f"\nNormalize each volume, output folder: {dest_dir}")
+        normalize_folder(source=data_dir, dest=dest_dir, dataset=opts.dataset, modes_args=cfg['data']['modes'])
 
     # Write to pickle
-    dest_dir_pkl = interim_dir
     if opts.processing_step == 'snap_pickle':
-        print(f"\nSave to pickle, output_folder: {dest_dir_pkl}")
+        dest_dir = interim_dir
+        print(f"\nSave to pickle, output_folder: {dest_dir}")
         print(f"-----")
         print("Each patient folder contains one .pkl file per slice")
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
-        convert_dataset_mi(source=dest_dir_nifti_resized_normalized, dest=dest_dir_pkl, max_patients=np.inf, dataset=opts.dataset)
+        convert_dataset_mi(source=data_dir, dest=dest_dir)
 
     # Save as zip
-    dest_dir_zip = interim_dir
     if opts.processing_step == 'snap_zip':
-        print(f"\nSave to zip, output folder: {dest_dir_zip}")
-        write_to_zip(source= os.path.join(dest_dir_pkl, 'temp'), dest=dest_dir_zip,  max_patients=100000, split=opts.validation_split)
+        dest_dir = interim_dir
+        print(f"\nSave to zip, output folder: {dest_dir}")
+        write_to_zip(source= os.path.join(data_dir), dest=dest_dir,  max_patients=opts.max_patients, split=opts.validation_split)
+    print("May be the force with you!")
 
 #----------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
     prepare_Pelvis_2_1()
-
-    print("May be the force with you!")

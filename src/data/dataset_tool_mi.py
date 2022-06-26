@@ -423,7 +423,7 @@ def convert_dataset_mi(
             im = Image.fromarray(img[m]/255)
             im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
         if image['depth_index'] == pop_range:
-            print(f"First slice from stack: {idx_name}")
+            print(f"\nFirst slice from stack: {idx_name}")
             for m in list(img.keys()):
                 sanity_check_dir = os.path.join(dest, 'sanity_check', f'first_from_stack_{pop_range}', m)
                 path_utils.make_dir(sanity_check_dir, is_printing=False)
@@ -497,9 +497,6 @@ def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test
         print(fold_list)
     return fold_list
 
-# todo adattare funzione snap.zip in modo che se riceve un file di testo con lo split segue quello, altrimenti lo genera
-# todo appunto label combinate
- # todo limit the patients
 def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, split=None):
     if split is None:
         split = {"train": 0.8, "val": 0.2, "test": 0}
@@ -529,7 +526,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
     train_split, val_split, test_split = split["train"], split["val"], split["test"]
     basename = f"{dataset}-num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
 
-    # Load split dataset if exist ,if not make a new one.
+    # Load split dataset if exist, if not make a new one.
     if dest is None:
         parent_dir = path_utils.get_parent_dir(source)
     else:
@@ -539,9 +536,11 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
     path_utils.make_dir(path_utils.get_parent_dir(split_path), is_printing=False)
 
     if os.path.exists(split_path):
+        print(f"Load saved split, name: {split_path}")
         s = io_utils.read_pickle(split_path)
         train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
     else:
+        print(f"Create new split without considering the label distribution.")
         train_split, val_split, test_split = (
             train_split / (train_split + val_split + test_split),
             val_split / (train_split + val_split + test_split),
@@ -578,7 +577,6 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
             add_to_zip(zipObj, patient_path, "test")
 
 # ----------------------------------------------------------------------------
-# todo add option to validation file
 @click.command()
 @click.option('--seed', help='Name of the input dataset', required=True, type=int, default=42)
 @click.option('--configuration_file', help='Path to configuration file', required=True, metavar='PATH')

@@ -23,6 +23,7 @@ import click
 import numpy as np
 import pandas as pd
 import PIL.Image
+from PIL import Image
 
 
 import yaml
@@ -83,11 +84,12 @@ def sanity_check_fllename(data_dir):
 
 def export_statistics(dataset_name, data_dir, reports_dir):
 
-    column_names = ["id_patient", "sex", "cancer_type", "additional_info"]
+    column_names = ["filename", "id_patient", "sex", "cancer_type", "additional_info"]
     df = pd.DataFrame(columns = column_names)
 
     list_patients = np.asarray(os.listdir(data_dir))
     for x in list_patients:
+        filename = x
         id_patient = x.split(',')[0].split('_')[-1]
 
         sex = x.split(',')[-1][0]
@@ -97,18 +99,8 @@ def export_statistics(dataset_name, data_dir, reports_dir):
         except IndexError:
             addinfo = ''
 
-        df.loc[len(df.index)] = [id_patient, sex, cancer_type,addinfo]
+        df.loc[len(df.index)] = [filename, id_patient, sex, cancer_type, addinfo]
     df.to_excel(os.path.join(reports_dir,f'info_{dataset_name}.xlsx'), index = False)
-
-# todo correzione typo nomi pazienti d'appertutto
-# todo associare label a tipi di cancro da 1 a 5. Nota Si può pensare anche a combinare label con la somma se non si vuole considerare solo la tipologia di cancro
-# P --> 1
-# L --> 2
-# ...
-# todo funzione che crea gli split a priori
-# todo adattare funzione snap.zip in modo che se riceve un file di testo con lo split segue quello, altrimenti lo genera
-# todo selezione randomica dei pazienti bilanciata con trait_test_split
-# todo split in train val e test bilanciato
 
 #----------------------------------------------------------------------------
 class EasyDict(dict):
@@ -205,7 +197,7 @@ def open_image_folder_patients(source_dir):
                 img = {}  # dictionary of modalities.
                 for name_modality in name_modalities:
                     img[name_modality] = fdata[name_modality][:, :, d]  # based on depth index (d): 0000->0128
-                yield dict(img=img,label=labels.get(arch_fname),  name=f"{patient_name:s}_{d:05d}",  folder_name=f"{patient_name:s}")
+                yield dict(img=img, label=labels.get(arch_fname), name=f"{patient_name:s}_{d:05d}", folder_name=f"{patient_name:s}", depth_index=d, total_depth=depth)
 
             if idx >= max_idx - 1:
                 break
@@ -384,7 +376,15 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
 def convert_dataset_mi(
     source: str,
     dest: str,
-    is_overwrite=False):
+    is_overwrite=False,
+    pop_range: int = 10):
+
+    # The CT registration could be not completed for the first/last slices of the patient stack. "is_idx_to_pos" define the range to skip
+    # at the beginning and end of the stack
+    if pop_range != 0:
+        is_idx_to_pos = np.arange(0, pop_range)
+    else:
+        is_idx_to_pos = np.array([])
 
     # Open normalized folder.
     num_files, input_iter = open_dataset_patient(source)
@@ -400,6 +400,7 @@ def convert_dataset_mi(
     dataset_attrs = None
 
     for idx, image in enumerate(input_iter):
+
         folder_name = image["folder_name"]
         idx_name = image["name"]
         archive_fname = f"{folder_name}/{idx_name}.pickle"
@@ -408,15 +409,33 @@ def convert_dataset_mi(
 
         if not is_overwrite and os.path.exists(out_path):
             continue
+        if image['depth_index'] in is_idx_to_pos:
+            continue
+        if image['depth_index'] in (image['total_depth'] - is_idx_to_pos -1):
+            continue
 
         img = image["img"]
+
         # Sanity check
-        from PIL import Image
         for m in list(img.keys()):
             sanity_check_dir = os.path.join(dest, 'sanity_check', folder_name, m)
             path_utils.make_dir(sanity_check_dir, is_printing=False)
             im = Image.fromarray(img[m]/255)
             im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
+        if image['depth_index'] == pop_range:
+            print(f"First slice from stack: {idx_name}")
+            for m in list(img.keys()):
+                sanity_check_dir = os.path.join(dest, 'sanity_check', f'first_from_stack_{pop_range}', m)
+                path_utils.make_dir(sanity_check_dir, is_printing=False)
+                im = Image.fromarray(img[m] / 255)
+                im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
+        if image['depth_index'] == (image['total_depth'] - pop_range - 1):
+            print(f"Last slice from stack: {idx_name}")
+            for m in list(img.keys()):
+                sanity_check_dir = os.path.join(dest, 'sanity_check', f'last_from_stack_{pop_range}', m)
+                path_utils.make_dir(sanity_check_dir, is_printing=False)
+                im = Image.fromarray(img[m] / 255)
+                im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
 
         # Transform may drop images.
         if img is None:
@@ -478,8 +497,10 @@ def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test
         print(fold_list)
     return fold_list
 
-
-def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, split=None): # todo limit the patients
+# todo adattare funzione snap.zip in modo che se riceve un file di testo con lo split segue quello, altrimenti lo genera
+# todo appunto label combinate
+ # todo limit the patients
+def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, split=None):
     if split is None:
         split = {"train": 0.8, "val": 0.2, "test": 0}
 
@@ -508,7 +529,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
     train_split, val_split, test_split = split["train"], split["val"], split["test"]
     basename = f"{dataset}-num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
 
-    # Load Splitted dataset if existed, if not make a new one.
+    # Load split dataset if exist ,if not make a new one.
     if dest is None:
         parent_dir = path_utils.get_parent_dir(source)
     else:
@@ -557,6 +578,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
             add_to_zip(zipObj, patient_path, "test")
 
 # ----------------------------------------------------------------------------
+# todo add option to validation file
 @click.command()
 @click.option('--seed', help='Name of the input dataset', required=True, type=int, default=42)
 @click.option('--configuration_file', help='Path to configuration file', required=True, metavar='PATH')
@@ -569,6 +591,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
 @click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
 @click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
+@click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', required=True, type=int, default=10)
 def prepare_Pelvis_2_1(**kwargs):
 
     opts = EasyDict(**kwargs)
@@ -628,9 +651,17 @@ def prepare_Pelvis_2_1(**kwargs):
     print(f'Processing step:     {opts.processing_step}')
     print(f'Validation method:   {opts.validation_method}')
     print(f'Validation split:    {opts.validation_split}')
+    print(f'Number of slice to drop and the beginning/end od the stack:    {opts.pop_range}')
     print()
 
-    sanity_check_fllename(data_dir)
+    sanity_check_fllename(data_dir=data_dir)
+
+    path = Path(os.path.join(interim_dir, f'info_{opts.dataset}.xlsx'))
+    if path.is_file():
+        print('The info file of the selected dataset already exists.')
+    else:
+        print(f'Export statistics.')
+        export_statistics(dataset_name=opts.dataset, data_dir=data_dir, reports_dir=interim_dir)
 
     # From dicom to nifti
     if opts.processing_step == 'process_dicom_2_nifti':
@@ -658,7 +689,7 @@ def prepare_Pelvis_2_1(**kwargs):
         print("Each patient folder contains one .pkl file per slice")
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
-        convert_dataset_mi(source=data_dir, dest=dest_dir)
+        convert_dataset_mi(source=data_dir, dest=dest_dir, pop_range=10)
 
     # Save as zip
     if opts.processing_step == 'snap_zip':

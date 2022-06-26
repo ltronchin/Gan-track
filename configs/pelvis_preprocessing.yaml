@@ -9,6 +9,13 @@ data:
   image_size: 256
   channel: 1
 
+  classes: # name of classes
+    - B
+    - G
+    - L
+    - P
+    - R
+
   source_dataset: Pelvis_2.1
   processed_dataset: Pelvis_2.1
   data_dir: ./data/data_raw

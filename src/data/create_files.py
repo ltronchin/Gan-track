@@ -3,66 +3,64 @@ import sys
 print('Python %s on %s' % (sys.version, sys.platform))
 sys.path.extend(["./"])
 
-import collections
 import os
-from tqdm import tqdm
+import json
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 
 import src.utils.util_general as util_general
+import src.engine.utils.io_utils as io_utils
 
 # Seed Everything
-seed = 0
+seed = 42
 util_general.seed_all(seed)  # set fixed seed to all libraries
 
-# todo upload all the patients in a list
-
-data_dir = '/home/lorenzo/data_m2/data/interim/Pelvis_2.1/temp'
-
 # Parameters
-y_label = "Prognosis"
-cv = 10
-test_size = 0.
-val_size = 0.1  # 10% of train set
+dataset_name = 'Pelvis_2.1'
+num_patients_dataset = 375
+num_patient_jobs = np.arange(25, num_patients_dataset+25, step=25)[1:] # 400 maximum number of patients in the dataset + step
+train_split = 0.7
+val_split = 0.2
+test_split = 0.1
 
 # Files and Directories
-data_dir = "../data/AIforCOVID"
-dest_dir = "./data/processed/folds"
-clinical_data_path = os.path.join(data_dir, "AIforCOVID.xlsx")  # upload clinical data only to extract the patients' label
-dest_dir_folds = os.path.join(dest_dir, str(cv))
-util_general.create_dir(dest_dir)
+data_dir = os.path.join("./data/interim/", dataset_name)
 
 # Load DB
-clinical_data = pd.read_excel(clinical_data_path, index_col="ImageFile")
+info_data = pd.read_excel(os.path.join(data_dir, "info_Pelvis_2.1.xlsx"))
+if 'label' in info_data.keys(): # Create a label column associated to every cancer type class
+    pass
+else:
+    classes = ['B', 'G', 'L', 'P', 'R']
+    class_to_idx = {c: i for i, c in enumerate(sorted(classes))}
+    idx_to_class = {i: c for c, i in class_to_idx.items()}
+    info_data['label'] = pd.Series([class_to_idx[x] for x in info_data['cancer_type']])
+    info_data.to_excel(os.path.join(data_dir, f'info_{dataset_name}.xlsx'), index=False)
 
-# K-Folds CV
-fold_data = collections.defaultdict(lambda: {})
-for fold in range(cv):
-    train, test = train_test_split(clinical_data, test_size=test_size, stratify=clinical_data[y_label], random_state=fold)  # with stratify equal to y_label we mantain the prior distributin on each set
-    train, val = train_test_split(train, test_size=val_size, stratify=train[y_label], random_state=fold)
-    fold_data[fold]['train'] = train.index.to_list()
-    fold_data[fold]['val'] = val.index.to_list()
-    fold_data[fold]['test'] = test.index.to_list()
 
-# all.txt
-with open(os.path.join(dest_dir, 'all.txt'), 'w') as file:
-    file.write("id label\n")
-    for id_patient in clinical_data.index:
-        label = "%s\n" % clinical_data.loc[id_patient, y_label]
-        row = "%s %s" % (id_patient, label)
-        file.write(row)
+for patient_job in num_patient_jobs:
+    print(f"Patient job: {patient_job}")
+    basename = f"{dataset_name}-num-{patient_job:d}"
+    dest_dir_jobs = os.path.join(data_dir, "jobs", basename)
+    util_general.create_dir(dest_dir_jobs)
 
-# create split dir
-steps = ['train', 'val', 'test']
-for fold in range(cv):
-    dest_dir_cv = os.path.join(dest_dir_folds, str(fold))
-    util_general.create_dir(dest_dir_cv)
+    # Random pick max_patient patients guaranteeing the priori distribution on each class set
+    if num_patients_dataset - patient_job != 0:
+        sample_patients, _ = train_test_split(info_data, test_size=num_patients_dataset - patient_job, stratify=info_data['label'], random_state=patient_job)
+        sample_patients.to_excel(os.path.join(dest_dir_jobs, f'{basename}.xlsx'), index=False)
+    else:
+        sample_patients = info_data
 
-    # .txt
-    for step in steps:
-        with open(os.path.join(dest_dir_cv, '%s.txt' % step), 'w') as file:
-            file.write("id label\n")
-            for id_patient in tqdm(fold_data[fold][step]):
-                label = "%s\n" % clinical_data.loc[id_patient, y_label]
-                row = "%s %s" % (id_patient, label)
-                file.write(row)
+    # Training, test, val split
+    basename += f"_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
+    train, test = train_test_split(sample_patients, test_size=test_split, stratify=sample_patients['label'], random_state=patient_job)  # with stratify equal to y_label we mantain the prior distributin on each set
+    train, val = train_test_split(train, test_size=val_split, stratify=train['label'], random_state=patient_job)
+
+    # Save the training/validation/test split
+    s = {"sample_patients": sample_patients['filename'].to_list(), "train": train['filename'].to_list(), "val": val['filename'].to_list(), "test": test['filename'].to_list()}
+    with open(os.path.join(dest_dir_jobs, f"{basename}.json"), 'w') as f:
+        json.dump(s, f, ensure_ascii=False, indent=4)  # save as json
+    io_utils.write_pickle(s,  os.path.join(dest_dir_jobs, f"{basename}.pickle"))  # save as pickle
+
+print("May be the force with you")

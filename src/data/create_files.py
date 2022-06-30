@@ -57,6 +57,8 @@ for patient_job in num_patient_jobs:
     train, test = train_test_split(sample_patients, test_size=test_split, stratify=sample_patients['label'], random_state=patient_job)  # with stratify equal to y_label we mantain the prior distributin on each set
     train, val = train_test_split(train, test_size=val_split, stratify=train['label'], random_state=patient_job)
 
+    print(f"Train: {len(train)}, Val: {len(val)}, Test: {len(test)}")
+
     # Save the training/validation/test split
     s = {"sample_patients": sample_patients['filename'].to_list(), "train": train['filename'].to_list(), "val": val['filename'].to_list(), "test": test['filename'].to_list()}
     with open(os.path.join(dest_dir_jobs, f"{basename}.json"), 'w') as f:

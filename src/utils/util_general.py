@@ -236,9 +236,9 @@ def seed_all(seed): # for deterministic behaviour
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def create_dir(dir): # function to create directory
-    if not os.path.exists(dir):
-        Path(dir).mkdir(parents=True, exist_ok=True) # with parents 'True' creates all tree/nested folder
+def create_dir(outdir): # function to create directory
+    if not os.path.exists(outdir):
+        Path(outdir).mkdir(parents=True, exist_ok=True) # with parents 'True' creates all tree/nested folder
 
 def create_path(*path_list, f=None):
     f = path_list[0]

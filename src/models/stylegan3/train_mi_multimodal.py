@@ -186,12 +186,12 @@ def main(**kwargs):
     "Alias-Free Generative Adversarial Networks".
 
     Examples:
-    \b Train StyleGAN2 for Pelvis_2.1 at 256x256 resolution using 2 GPUs.
+    \b Train StyleGAN2 for Pelvis_2.1 with 375 patients at 256x256 resolution using 2 GPUs
     python train_mi_multimodal.py
         --outdir=/home/lorenzo/Gan\ tracker/reports --cfg=stylegan2 \\
-        --data=/home/lorenzo/Gan\ tracker/data/interim/Pelvis_2.1/Pelvis_2.1-num-375_train-0.70_val-0.20_test-0.10.zip \\
-        --dataset=Pelvis_2.1 --dtype=float32 --modalities=MR_nonrigid_CT,MR_MR_T2 \\
-        --gpus=2 --batch=32 --gamma=0.4096 --mirror=1 --kimg=5000 --glr=0.0025 --dlr=0.0025 --snap=10 --cbase=16384 --metrics_cache=True
+        --data=/home/lorenzo/data_m2/data/interim/Pelvis_2.1/Pelvis_2.1-num-375_train-0.70_val-0.20_test-0.10.zip \\
+        --dataset=Pelvis_2.1 --dtype=float32 --modalities=MR_nonrigid_CT,MR_MR_T2  --split='train' --metrics_cache=True \\
+        --gpus=2 --batch=32 --gamma=0.4096 --mirror=1 --kimg=5000 --glr=0.0025 --dlr=0.0025 --snap=10 --cbase=16384
     """
 
     # CUSTOMIZING START
@@ -199,8 +199,7 @@ def main(**kwargs):
     cache_dir = dnnlib.util.take_cache_dir_path()
     cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
     if os.path.isdir(cache_dir_metric):
-        #user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
-        user_input = "N"
+        user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
         if user_input == 'Y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')

@@ -7,12 +7,9 @@ import os
 import json
 import numpy as np
 from typing import Any, Optional, Tuple, Union
-import torch
 import matplotlib.pyplot as plt
-import time
 import re
 
-from src.utils import util_general
 from projector import projection_loop
 
 # Set plot parameters.
@@ -36,6 +33,29 @@ def launch_projection(c, desc, outdir, outdir_model):
     assert not os.path.exists(c.run_dir)
 
     # Print options.
+    print()
+    print('Training options:')
+    print(json.dumps(c, indent=2))
+    print()
+    print(f'Output directory:    {c.run_dir}')
+    print(f'Number of GPUs:      {c.num_gpus}')
+    print(f'Batch size:          {c.batch_size} images')
+    print(f'Dataset path:        {c.training_set_kwargs.path}')
+
+    print(f'Dataset dtype:       {c.training_set_kwargs.dtype}')
+    print(f'Split:               {c.training_set_kwargs.split}')
+    print(f'Modalities:          {c.training_set_kwargs.modalities}')
+
+    print(f'Dataset size:        {c.training_set_kwargs.max_size} images')
+    print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
+    print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
+    print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
+
+    print(f'Experiment id for StyleGAN2-ADA {c.projector_kwargs.experiment}')
+    print(f'Num steps:                  {c.projector_kwargs.num_steps}')
+    print(f'Normalize per channel:      {c.projector_kwargs.save_final_projection}')
+    print()
+
 
     # Create output directory.
     print('Creating output directory...')
@@ -183,6 +203,7 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 # Required
 @click.option('--experiment',   help='Experiment run id to take from the results', type=str, required=True)
 @click.option('--network_pkl',  help='Network pickle filename or Metric filename', type=str, required=True)
+@click.option('--target_fname', help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
 @click.option('--num-steps',    help='Number of optimization steps', type=int, default=1000, show_default=True)
 @click.option('--normalize_per_mode', help='Normalize per mode or on the entire stack', type=bool, default=True, show_default=True)
 @click.option('--save_video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
@@ -209,7 +230,9 @@ def main(**kwargs):
     s_modalities = ",".join(s_modalities)
     c.projector_kwargs.experiment = opts.experiment
     c.projector_kwargs.network_pkl = opts.network_pkl
+    c.projector_kwargs.target_fname = opts.target_fname
     c.projector_kwargs.num_steps = opts.num_steps
+    c.projector_kwargs.normalize_per_mode = opts.normalize_per_mode
     c.projector_kwargs.save_video = opts.save_video
     c.projector_kwargs.save_final_projection = opts.save_final_projection
 
@@ -222,17 +245,12 @@ def main(**kwargs):
     desc = f"{dataset_name:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}" # todo add projector parameters
     if opts.desc is not None:
         desc += f'-{opts.desc}'
-    #util_general.create_dir(outdir=c.projector_kwargs.outdir)
 
     launch_projection(c=c, desc=desc, outdir=opts.outdir, outdir_model=opts.outdir_model)
 
 if __name__ == "__main__":
-    # CUSTOMIZING START
-    # FOR DEBUG REASON:
-    # RuntimeError:Ninja is required to load C++ extension #167
-    # Solutions: The subprocess does not include the lib path of conda environments. So manually set the environments in the script (https://github.com/zhanghang1989/PyTorch-Encoding/issues/167)
+    # For debug.
     my_env = os.environ.copy()
     my_env["PATH"] = "/home/lorenzo/miniconda3/envs/stylegan3/bin:" + my_env["PATH"]
     os.environ.update(my_env)
-    # CUSTOMIZING END
     main() # pylint: disable=no-value-for-parameter

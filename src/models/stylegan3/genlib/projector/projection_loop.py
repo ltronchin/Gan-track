@@ -26,7 +26,7 @@ def project(
         lr_rampdown_length = 0.25,  ## time that lr taks to go 0 again the "initial_learning_rate"
         lr_rampup_length = 0.05, #0.25 # time that lr taks to reach the "initial_learning_rate" starting from 0
         noise_ramp_length = 0.75,
-        regularize_noise_weight = 1e5,
+        regularize_noise_weight =  1e5,
         verbose = False,
         device: torch.device,
         modalities: list,
@@ -115,11 +115,11 @@ def project(
         synth = G.synthesis(ws, noise_mode='const')
 
         # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] per mode/channel in case of multimodal input.
-        if len(modalities) and normalize_per_mode:
+        if len(modalities) > 1 and normalize_per_mode:
             for idx_mode, mode in enumerate(modalities):
                 synth_mode =  synth[:, idx_mode, :, :].unsqueeze(dim=1)
-                low = synth_mode.min().item()
-                hi = synth_mode.max().item()
+                low = -1.0 # synth_mode.min().item()
+                hi = 1.0 # synth_mode.max().item()
                 synth[:, idx_mode, :, :] = (synth_mode - low) * (255 / (hi - low))
         else: # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] considering the entire stack
             synth = (synth + 1) * (255 / 2)
@@ -280,7 +280,7 @@ def projection_loop(
 
     # Initialize.
     start_time = time.time()
-    device =   torch.device('cuda:1') #torch.device('cuda', rank) # device = torch.device('cuda:1')
+    device =  torch.device('cuda', rank) #torch.device('cuda', rank) # device = torch.device('cuda:1')
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
     torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
@@ -307,9 +307,84 @@ def projection_loop(
         phase_real_img = phase_real_img.to(device).to(torch.float32)
         projected_w_tensor = run_projection(
             img_idx=idx, img_tensor=phase_real_img, outdir=run_dir, device=device, modalities=training_set_kwargs.modalities, dtype=training_set_kwargs.dtype, **projector_kwargs
-        ) # todo check training dataset
+        )
         projected_w[idx, :, :] = projected_w_tensor[-1].detach().cpu().numpy()
         idx += 1
 
     with open(os.path.join(run_dir,'projected_w'), 'wb') as handle:
         pickle.dump(projected_w, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+def projection_test(
+        target_fname=           '.',    # Path to image to invert
+        run_dir=                '.',    # Output directory.
+        training_set_kwargs=    {},     # Options for training set.
+        projector_kwargs=       {},     # Optiond for Projector algorithm
+        random_seed=            0,      # Global random seed.
+        num_gpus=               1,      # Number of GPUs participating in the training.
+        rank=                   0,      # Rank of the current process in [0, num_gpus[.
+        cudnn_benchmark=        True,   # Enable torch.backends.cudnn.benchmark?
+):
+    # Initialize.
+    start_time = time.time()
+    device = torch.device('cuda', rank)  # torch.device('cuda', rank) # device = torch.device('cuda:1')
+    np.random.seed(random_seed * num_gpus + rank)
+    torch.manual_seed(random_seed * num_gpus + rank)
+    torch.backends.cudnn.benchmark = cudnn_benchmark  # Improves training speed.
+    torch.backends.cuda.matmul.allow_tf32 = False  # Improves numerical accuracy.
+    torch.backends.cudnn.allow_tf32 = False  # Improves numerical accuracy.
+
+    # Load single Target Image.
+    print('Loading Test Image...')
+    target_pil = Image.open(target_fname).convert('L')  # convert in grayscale
+    target = torch.Tensor(np.array(target_pil))  # convert to Torch Tensor
+    if target.ndim != 4:
+        print(f"Unsupported input dimension: Expected 4D (batched) input but got input of size: {target.shape}! Let's add dimension!")
+        for _ in range(4 - target.ndim):
+            target = torch.unsqueeze(target, dim=0)
+        target = target.view([1, 1, 256, 256])
+    if target.dtype != torch.float32:
+        print( f"Unsupported input type: Expected float32 but got {target.dtype}! Let's change Tensor dtype!")
+        target = target.to(torch.float32)
+    print()
+    print('Image shape:', target.shape)
+    print('Image dtype:', target.dtype)
+    print('Image min:', target.min().item())
+    print('Image max:', target.max().item())
+    print()
+
+    _ = run_projection(
+        img_idx=0,
+        img_tensor=target,
+        outdir=run_dir,
+        device=device,
+        modalities=training_set_kwargs['modalities'],
+        dtype=training_set_kwargs['dtype'],
+        **projector_kwargs
+    )
+
+    print("May be the force with you!")
+
+if __name__ == "__main__":
+    # For debug.
+    my_env = os.environ.copy()
+    my_env["PATH"] = "/home/lorenzo/miniconda3/envs/stylegan3/bin:" + my_env["PATH"]
+    os.environ.update(my_env)
+
+    training_set_kwargs = {
+        'modalities': ['CT'],
+        'dtype': 'float32'
+    }
+    projector_kwargs = {
+        'outdir_model': "/home/lorenzo/Gan tracker/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
+        'num_steps': 1000,
+        'save_video': True,
+        'save_final_projection': True,
+        'normalize_per_mode': True,
+    }
+
+    projection_test(
+        target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo/stylegan2-ada/100151470_103.png",
+        run_dir = "/home/lorenzo/Gan tracker/reports/claro_retrospettivo/projection-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096_network-snapshot-005000.pkl/",
+        training_set_kwargs = training_set_kwargs,
+        projector_kwargs = projector_kwargs
+    ) # pylint: disable=no-value-for-parameter

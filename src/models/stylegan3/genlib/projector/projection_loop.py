@@ -19,31 +19,43 @@ def project(
         G,
         target: torch.Tensor,  # [1, C, H, W], dynamic range [0.0, 255.0], dtype float32 W & H must match G output resolution
         *,
-        num_steps=1000,
-        w_avg_samples=10000,
-        initial_learning_rate= 1, # 0.1,
-        initial_noise_factor=0.05,
-        lr_rampdown_length=0.25,  ## time that lr taks to go 0 again the "initial_learning_rate"
-        lr_rampup_length=0.05, # time that lr taks to reach the "initial_learning_rate" starting from 0
-        noise_ramp_length=0.75,
-        regularize_noise_weight=1e5,
-        verbose=False,
+        num_steps =1000,
+        w_avg_samples = 10000,
+        initial_learning_rate =  0.1,
+        initial_noise_factor = 0.05,
+        lr_rampdown_length = 0.25,  ## time that lr taks to go 0 again the "initial_learning_rate"
+        lr_rampup_length = 0.05, #0.25 # time that lr taks to reach the "initial_learning_rate" starting from 0
+        noise_ramp_length = 0.75,
+        regularize_noise_weight = 1e5,
+        verbose = False,
         device: torch.device,
-        modalities: list
+        modalities: list,
+        normalize_per_mode: bool
 ):
     assert target.shape == (1, G.img_channels, G.img_resolution, G.img_resolution)
 
-    if target.shape[1] == 1: # Make a three channel tensor.
-        target = {
+    # Normalize the targe image per mode/channel in case of multimodal input. Each image of the stack will be in [0 255]
+    if len(modalities) > 1 and normalize_per_mode:
+        for idx_mode, mode in enumerate(modalities):
+            target_mode = target[:, idx_mode, :, :].unsqueeze(dim=1)
+            low = target_mode.min().item()
+            hi = target_mode.max().item()
+            target[:, idx_mode, :, :] = (target_mode - low) * (255 / (hi - low))
+    else: # Only one mode or normalizing on the entire multichannel stack (the real images are alreay in the correct range [0.0 255]
+        pass
+
+    # Create a modalities dictionary and take a three channel tensor.
+    if target.shape[1] == 1:
+        target_modatilies = {
             modalities[0]: target.repeat([1, 3, 1, 1])
         }
-    elif target.shape[1] == 3:  # already in the correct format
-        target = {
+    elif target.shape[1] == 3:  # Already in the correct format
+        target_modatilies = {
             modalities[0]: target
         }
         pass
     else: # Multimodal input.
-        target = {
+        target_modatilies = {
             mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
         }
 
@@ -69,13 +81,13 @@ def project(
     with dnnlib.util.open_url(url) as f:
         vgg16 = torch.jit.load(f).eval().to(device)
 
-    # Features for target image.
+    # Compute the target LPIPS features for the real images using VGG16.
     target_features = {}
     for mode in modalities:
-        target_images = target[mode].to(device).to(torch.float32)
-        if target_images.shape[2] > 256:
-            target_images = F.interpolate(target_images, size=(256, 256), mode='area')
-        target_features[mode] = vgg16(target_images, resize_images=False, return_lpips=True)
+        target_mode = target_modatilies[mode].to(device).to(torch.float32)
+        if target_mode.shape[2] > 256:
+            target_mode = F.interpolate(target_mode, size=(256, 256), mode='area')
+        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)
 
     w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True)  # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
@@ -100,33 +112,41 @@ def project(
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
         ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
-        synth_images = G.synthesis(ws, noise_mode='const')
-        # Normalize from [-1 1] range to [0.0, 255.0] the synthetic image
-        synth_images = (synth_images + 1) * (255 / 2) # normalize on the entire multichannel stack
+        synth = G.synthesis(ws, noise_mode='const')
 
-        if synth_images.shape[1] == 1:  # Make a three channel tensor.
-            synth_images = {
-                modalities[0]: synth_images.repeat([1, 3, 1, 1])
+        # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] per mode/channel in case of multimodal input.
+        if len(modalities) and normalize_per_mode:
+            for idx_mode, mode in enumerate(modalities):
+                synth_mode =  synth[:, idx_mode, :, :].unsqueeze(dim=1)
+                low = synth_mode.min().item()
+                hi = synth_mode.max().item()
+                synth[:, idx_mode, :, :] = (synth_mode - low) * (255 / (hi - low))
+        else: # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] considering the entire stack
+            synth = (synth + 1) * (255 / 2)
+
+        # Create a modalities dictionary and take a three channel tensor.
+        if synth.shape[1] == 1:
+            synth_modalities = {
+                modalities[0]: synth.repeat([1, 3, 1, 1])
             }
-        elif synth_images.shape[1] == 3:  # already in the correct format
-            synth_images = {
-                modalities[0]: synth_images
+        elif synth.shape[1] == 3:  # already in the correct format
+            synth_modalities = {
+                modalities[0]: synth
             }
             pass
         else:  # Multimodal input.
-            synth_images = {
-                mode: synth_images[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
+            synth_modalities = {
+                mode: synth[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
             }
         synth_features = {}
         dist = {}
         for mode in modalities:
-            target_synth_images = synth_images[mode]
+            synth_mode = synth_modalities[mode]
             # Downsample image to 256x256 if it's larger than that. VGG was built for 256x256 images.
-            # target_synth_images = (target_synth_images + 1) * (255 / 2) # to normalize in [0 255] per channel
-            if target_synth_images.shape[2] > 256:
-                target_synth_images = F.interpolate(target_synth_images, size=(256, 256), mode='area')
+            if synth_mode.shape[2] > 256:
+                synth_mode = F.interpolate(synth_mode, size=(256, 256), mode='area')
             # Features for synth images.
-            synth_features[mode] = vgg16(target_synth_images, resize_images=False, return_lpips=True)
+            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True)
 
             # Compute distance.
             dist[mode] = (target_features[mode] - synth_features[mode]).square().sum()
@@ -170,7 +190,8 @@ def project(
     return w_out.repeat([1, G.mapping.num_ws, 1])
 
 def run_projection(
-        img_tensor,
+        img_idx: int,
+        img_tensor: torch.Tensor,
         outdir: str,
         outdir_model: str,
         device: torch.device,
@@ -178,6 +199,8 @@ def run_projection(
         dtype: str,
         num_steps: int,
         save_video: bool,
+        save_final_projection: bool,
+        normalize_per_mode: bool = False,
         **kwargs
 ):
     """Project given image to the latent space of pretrained network pickle."""
@@ -200,21 +223,22 @@ def run_projection(
         num_steps=num_steps,
         verbose=True,
         device=device,
-        modalities=modalities
+        modalities=modalities,
+        normalize_per_mode=normalize_per_mode
     )
     print(f'Elapsed: {(perf_counter() - start_time):.1f} s')
 
     # Render debug output: optional video and projected image and W vector.
     os.makedirs(outdir, exist_ok=True)
-    if save_video: #todo save video per mode
+    if save_video:
         synth_image_list = []
         for projected_w in projected_w_steps:
             synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
-            synth_image_list.append((synth_image + 1) * (255 / 2))
+            synth_image_list.append((synth_image + 1) * (255 / 2))  # normalize per stack
 
         for idx_mode, mode in enumerate(modalities):
-            video = imageio.get_writer(f'{outdir}/proj_{mode}.mp4', mode='I', fps=10, codec='libx264', bitrate='16M')
-            print(f'Saving optimization progress video "{outdir}/proj_{mode}.mp4"')
+            video = imageio.get_writer(f'{outdir}/proj_{img_idx}_{mode}.mp4', mode='I', fps=10, codec='libx264', bitrate='16M')
+            print(f'Saving optimization progress video "{outdir}/proj_{img_idx}_{mode}.mp4')
 
             for synth_image in synth_image_list:
                 synth_image = synth_image[:, idx_mode, :, :].unsqueeze(0)
@@ -225,18 +249,19 @@ def run_projection(
             video.close()
 
     # Save final projected frame and W vector.
-    projected_w = projected_w_steps[-1]
-    synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
-    synth_image = (synth_image + 1) * (255 / 2)
-    np.savez(f'{outdir}/projected_w.npz', w=projected_w.unsqueeze(0).cpu().numpy())
+    if save_final_projection:
+        projected_w = projected_w_steps[-1]
+        synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
+        synth_image = (synth_image + 1) * (255 / 2)  # normalize per stack
+        np.savez(f'{outdir}/projected_w_{img_idx}.npz', w=projected_w.unsqueeze(0).cpu().numpy())
 
-    for idx_mode, mode in enumerate(modalities):
-        target_image = img_tensor[:, idx_mode, :, :].unsqueeze(0).permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
-        target_pil = PIL.Image.fromarray(target_image.squeeze(-1))
-        target_pil.save(f'{outdir}/target_{mode}.png')
+        for idx_mode, mode in enumerate(modalities):
+            target_image = img_tensor[:, idx_mode, :, :].unsqueeze(0).permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
+            target_pil = PIL.Image.fromarray(target_image.squeeze(-1))
+            target_pil.save(f'{outdir}/target_{img_idx}_{mode}.png')
 
-        synth_image_pil = synth_image[:, idx_mode, :, :].unsqueeze(0).permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
-        PIL.Image.fromarray(synth_image_pil.squeeze(-1)).save(f'{outdir}/proj_{mode}.png')
+            synth_image_pil = synth_image[:, idx_mode, :, :].unsqueeze(0).permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
+            PIL.Image.fromarray(synth_image_pil.squeeze(-1)).save(f'{outdir}/proj_{img_idx}_{mode}.png')
 
     return projected_w_steps
 
@@ -248,14 +273,14 @@ def projection_loop(
     num_gpus                = 1,        # Number of GPUs participating in the training.
     rank                    = 0,        # Rank of the current process in [0, num_gpus[.
     batch_size              = 1,        # Total batch size for one training iteration.
-    image_snapshot_ticks    = 50,       # How often to save image snapshots? None = disable.
-    network_snapshot_ticks  = 50,       # How often to save network snapshots? None = disable.
+    image_snapshot_ticks=50,  # How often to save image snapshots? None = disable.
+    network_snapshot_ticks=50,  # How often to save network snapshots? None = disable.
     cudnn_benchmark         = True,     # Enable torch.backends.cudnn.benchmark?
 ):
 
     # Initialize.
     start_time = time.time()
-    device = torch.device('cuda', rank) # device = torch.device('cuda:1')
+    device =   torch.device('cuda:1') #torch.device('cuda', rank) # device = torch.device('cuda:1')
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
     torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
@@ -264,7 +289,7 @@ def projection_loop(
 
     # Load training set.
     print('Loading training set...')
-    training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs) # subclass of training.dataset.Dataset
+    training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs) # subclass of training.dataset.Datasetx
     training_set_iterator = torch.utils.data.DataLoader(dataset=training_set, batch_size=batch_size//num_gpus)
     print()
     print('Num images: ', len(training_set))
@@ -272,7 +297,7 @@ def projection_loop(
     print('Label shape:', training_set.label_shape)
     print()
 
-    # todo  todo .pkl file for latent position of training dataset
+    # todo parameter tuning
     # todo add a MSE based loss function on x vs x_tilde
     # todo add parameter search over lambda
     projected_w = np.zeros(shape=(len(training_set), 14, 512), dtype=float) # todo parametrize 14 and 512
@@ -280,6 +305,11 @@ def projection_loop(
     for phase_real_img, _ in training_set_iterator:
 
         phase_real_img = phase_real_img.to(device).to(torch.float32)
-
-        projected_w[idx, :, :] = run_projection(img_tensor=phase_real_img, outdir=run_dir, device=device, modalities=training_set_kwargs.modalities, dtype=training_set_kwargs.dtype, **projector_kwargs)
+        projected_w_tensor = run_projection(
+            img_idx=idx, img_tensor=phase_real_img, outdir=run_dir, device=device, modalities=training_set_kwargs.modalities, dtype=training_set_kwargs.dtype, **projector_kwargs
+        ) # todo check training dataset
+        projected_w[idx, :, :] = projected_w_tensor[-1].detach().cpu().numpy()
         idx += 1
+
+    with open(os.path.join(run_dir,'projected_w'), 'wb') as handle:
+        pickle.dump(projected_w, handle, protocol=pickle.HIGHEST_PROTOCOL)

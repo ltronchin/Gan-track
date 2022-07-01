@@ -184,7 +184,9 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 @click.option('--experiment',   help='Experiment run id to take from the results', type=str, required=True)
 @click.option('--network_pkl',  help='Network pickle filename or Metric filename', type=str, required=True)
 @click.option('--num-steps',    help='Number of optimization steps', type=int, default=1000, show_default=True)
-@click.option('--save-video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
+@click.option('--normalize_per_mode', help='Normalize per mode or on the entire stack', type=bool, default=True, show_default=True)
+@click.option('--save_video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
+@click.option('--save_final_projection', help='Save the final results of projection', type=bool, default=True, show_default=True)
 def main(**kwargs):
 
     # Initialize config.
@@ -209,6 +211,7 @@ def main(**kwargs):
     c.projector_kwargs.network_pkl = opts.network_pkl
     c.projector_kwargs.num_steps = opts.num_steps
     c.projector_kwargs.save_video = opts.save_video
+    c.projector_kwargs.save_final_projection = opts.save_final_projection
 
     # Save in outdir_model the directory that contains the results for StyleGAN2-ADA
     opts.outdir_model =  os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
@@ -216,7 +219,7 @@ def main(**kwargs):
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "projection-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}-" # todo add projector parameters
+    desc = f"{dataset_name:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}" # todo add projector parameters
     if opts.desc is not None:
         desc += f'-{opts.desc}'
     #util_general.create_dir(outdir=c.projector_kwargs.outdir)

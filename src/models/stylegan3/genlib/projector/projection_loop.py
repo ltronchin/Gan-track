@@ -29,21 +29,9 @@ def project(
         regularize_noise_weight =  1e5,
         verbose = False,
         device: torch.device,
-        modalities: list,
-        normalize_per_mode: bool
+        modalities: list
 ):
     assert target.shape == (1, G.img_channels, G.img_resolution, G.img_resolution)
-
-    # Normalize the targe image per mode/channel in case of multimodal input. Each image of the stack will be in [0 255]
-    if len(modalities) > 1 and normalize_per_mode:
-        for idx_mode, mode in enumerate(modalities):
-            target_mode = target[:, idx_mode, :, :].unsqueeze(dim=1)
-            low = target_mode.min().item()
-            hi = target_mode.max().item()
-            target[:, idx_mode, :, :] = (target_mode - low) * (255 / (hi - low))
-    else: # Only one mode or normalizing on the entire multichannel stack (the real images are alreay in the correct range [0.0 255]
-        pass
-
     # Create a modalities dictionary and take a three channel tensor.
     if target.shape[1] == 1:
         target_modatilies = {
@@ -114,15 +102,8 @@ def project(
         ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
         synth = G.synthesis(ws, noise_mode='const')
 
-        # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] per mode/channel in case of multimodal input.
-        if len(modalities) > 1 and normalize_per_mode:
-            for idx_mode, mode in enumerate(modalities):
-                synth_mode =  synth[:, idx_mode, :, :].unsqueeze(dim=1)
-                low = -1.0 # synth_mode.min().item()
-                hi = 1.0 # synth_mode.max().item()
-                synth[:, idx_mode, :, :] = (synth_mode - low) * (255 / (hi - low))
-        else: # Normalize the synthetic image  from [-1 1] to [0.0, 255.0] considering the entire stack
-            synth = (synth + 1) * (255 / 2)
+       # Rescale the synthetic image  from [-1 1] to [0.0, 255.0]
+        synth = (synth + 1) * (255 / 2)
 
         # Create a modalities dictionary and take a three channel tensor.
         if synth.shape[1] == 1:
@@ -200,7 +181,6 @@ def run_projection(
         num_steps: int,
         save_video: bool,
         save_final_projection: bool,
-        normalize_per_mode: bool = False,
         **kwargs
 ):
     """Project given image to the latent space of pretrained network pickle."""
@@ -223,8 +203,7 @@ def run_projection(
         num_steps=num_steps,
         verbose=True,
         device=device,
-        modalities=modalities,
-        normalize_per_mode=normalize_per_mode
+        modalities=modalities
     )
     print(f'Elapsed: {(perf_counter() - start_time):.1f} s')
 
@@ -378,8 +357,7 @@ if __name__ == "__main__":
         'outdir_model': "/home/lorenzo/Gan tracker/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
         'num_steps': 1000,
         'save_video': True,
-        'save_final_projection': True,
-        'normalize_per_mode': True,
+        'save_final_projection': True
     }
 
     projection_test(

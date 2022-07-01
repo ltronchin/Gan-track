@@ -205,7 +205,6 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 @click.option('--network_pkl',  help='Network pickle filename or Metric filename', type=str, required=True)
 @click.option('--target_fname', help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
 @click.option('--num-steps',    help='Number of optimization steps', type=int, default=1000, show_default=True)
-@click.option('--normalize_per_mode', help='Normalize per mode or on the entire stack', type=bool, default=True, show_default=True)
 @click.option('--save_video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
 @click.option('--save_final_projection', help='Save the final results of projection', type=bool, default=True, show_default=True)
 def main(**kwargs):
@@ -232,7 +231,6 @@ def main(**kwargs):
     c.projector_kwargs.network_pkl = opts.network_pkl
     c.projector_kwargs.target_fname = opts.target_fname
     c.projector_kwargs.num_steps = opts.num_steps
-    c.projector_kwargs.normalize_per_mode = opts.normalize_per_mode
     c.projector_kwargs.save_video = opts.save_video
     c.projector_kwargs.save_final_projection = opts.save_final_projection
 

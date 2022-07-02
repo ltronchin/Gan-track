@@ -167,7 +167,7 @@ def parse_comma_separated_list(s):
 
 #----------------------------------------------------------------------------
 
-def open_image_folder_patients(source_dir):
+def open_image_folder_patients(source_dir, transpose_img):
     input_patients = glob.glob(os.path.join(source_dir, "*"))
 
     # Load labels.
@@ -197,6 +197,8 @@ def open_image_folder_patients(source_dir):
                 img = {}  # dictionary of modalities.
                 for name_modality in name_modalities:
                     img[name_modality] = fdata[name_modality][:, :, d]  # based on depth index (d): 0000->0128
+                    if transpose_img:
+                        img[name_modality] = np.transpose(img[name_modality], [1, 0])
                 yield dict(img=img, label=labels.get(arch_fname), name=f"{patient_name:s}_{d:05d}", folder_name=f"{patient_name:s}", depth_index=d, total_depth=depth)
 
             if idx >= max_idx - 1:
@@ -206,9 +208,9 @@ def open_image_folder_patients(source_dir):
 
 #----------------------------------------------------------------------------
 
-def open_dataset_patient(source):
+def open_dataset_patient(source, transpose_img):
     if os.path.isdir(source):
-        return open_image_folder_patients(source)
+        return open_image_folder_patients(source, transpose_img)
     elif os.path.isfile(source):
         assert False, "unknown archive type"
     else:
@@ -242,7 +244,8 @@ def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list):
             output_file = os.path.join(output_dir, f"{fname_mode}.nii.gz")
 
             try:
-                dicom2nifti.dicom_series_to_nifti(mode, output_file, reorient_nifti=True) # to dicom_series_to_nifti feed a directory containing the slices to be included in .nii.gz volume
+                # reorient_nifti=False to mantain the orientation in Dicom file
+                dicom2nifti.dicom_series_to_nifti(mode, output_file, reorient_nifti=False) # to dicom_series_to_nifti feed a directory containing the slices to be included in .nii.gz volume
             except:
                 print(f"Fail to convert {mode:s}")
 
@@ -284,7 +287,7 @@ def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # resc
 
     folders = glob.glob(os.path.join(source, "*"))
     try:
-        pool = Pool()  # Multithreading
+        pool = Pool(processes=1)  # Multithreading
         l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape)))
         pool.close()
     except:
@@ -364,7 +367,7 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
     folders = glob.glob(os.path.join(source, "*"))
 
     try:
-       pool = Pool() # Multithreading
+       pool = Pool(processes=1) # Multithreading
        l = pool.starmap(normalize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)))
        pool.close()
     except:
@@ -373,11 +376,12 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
 
 #----------------------------------------------------------------------------
 
-def convert_dataset_mi(
+def  convert_dataset_mi(
     source: str,
     dest: str,
-    is_overwrite=False,
-    pop_range: int = 10):
+    is_overwrite: bool = False,
+    pop_range: int = 10,
+    transpose_img: bool = True):
 
     # The CT registration could be not completed for the first/last slices of the patient stack. "is_idx_to_pos" define the range to skip
     # at the beginning and end of the stack
@@ -387,7 +391,7 @@ def convert_dataset_mi(
         is_idx_to_pos = np.array([])
 
     # Open normalized folder.
-    num_files, input_iter = open_dataset_patient(source)
+    num_files, input_iter = open_dataset_patient(source, transpose_img)
 
     # Create a temp folder to be save into zipfile
     temp = os.path.join(dest, "temp")
@@ -590,6 +594,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
 @click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
 @click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', required=True, type=int, default=10)
+@click.option('--transpose_img', help='Transpose the 2D slice swapping the axis', required=True, type=bool, default=True)
 def prepare_Pelvis_2_1(**kwargs):
 
     opts = EasyDict(**kwargs)
@@ -650,6 +655,7 @@ def prepare_Pelvis_2_1(**kwargs):
     print(f'Validation method:   {opts.validation_method}')
     print(f'Validation split:    {opts.validation_split}')
     print(f'Number of slice to drop and the beginning/end od the stack:    {opts.pop_range}')
+    print(f'Transpose the slice [x y] --> [y x]:                           {opts.transpose_img}')
     print()
 
     sanity_check_fllename(data_dir=data_dir)
@@ -687,7 +693,7 @@ def prepare_Pelvis_2_1(**kwargs):
         print("Each patient folder contains one .pkl file per slice")
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
-        convert_dataset_mi(source=data_dir, dest=dest_dir, pop_range=10)
+        convert_dataset_mi(source=data_dir, dest=dest_dir, pop_range=10, transpose_img = True)
 
     # Save as zip
     if opts.processing_step == 'snap_zip':

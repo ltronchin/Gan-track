@@ -112,7 +112,7 @@ class Dataset(torch.utils.data.Dataset):
         # CUSTOMIZING END
         if self._xflip[idx]:
             assert image.ndim == 3 # CHW
-            image = image[:, :, ::-1]
+            image = image[:, :, ::-1] # HERE THE x_flip is applied! The images is MIRRORED (left-to-right)
         return image.copy(), self.get_label(idx)
 
     def get_label(self, idx):

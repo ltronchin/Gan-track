@@ -15,6 +15,7 @@ import re
 import json
 import tempfile
 import torch
+import sys
 
 import dnnlib
 from training import training_loop_mi_multimodal
@@ -196,10 +197,16 @@ def main(**kwargs):
 
     # CUSTOMIZING START
     import shutil
+    gettrace = getattr(sys, 'gettrace', None)
+
     cache_dir = dnnlib.util.take_cache_dir_path()
     cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
     if os.path.isdir(cache_dir_metric):
-        user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
+        if gettrace is None:
+            user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
+        else:
+            print('Hmm, Big Debugger is watching me')
+            user_input = 'N'
         if user_input == 'Y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')

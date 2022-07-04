@@ -180,10 +180,10 @@ def open_image_folder_patients(source_dir, transpose_img):
             arch_fname = os.path.relpath(patient, source_dir)
             arch_fname = arch_fname.replace("\\", "/")
 
-            # Read all modalities of one patient
+            # Read all modalities of the selected patient.
             modalities = glob.glob(os.path.join(patient, "*.nii.gz"))
             name_modalities = [path_utils.get_filename(path) for path in modalities]
-            name_modalities = [name_modalities[i].replace(".nii.gz", "") for i in range(len(name_modalities))] # remove the .nii.gz
+            name_modalities = [name_modalities[i].replace(".nii.gz", "") for i in range(len(name_modalities))] # Remove the .nii.gz
 
             parent_dir = path_utils.get_parent_dir(modalities[0])
             patient_name = path_utils.get_filename(parent_dir)
@@ -192,7 +192,7 @@ def open_image_folder_patients(source_dir, transpose_img):
             for name_modality in name_modalities:
                 fdata[name_modality] = nib.load(os.path.join(parent_dir, f"{name_modality}.nii.gz")).get_fdata()
 
-            depth = nib.load(modalities[0]).shape[-1] # save the number of slices/channel
+            depth = nib.load(modalities[0]).shape[-1] # Save the number of Slices/Channel
             for d in range(depth):
                 img = {}  # dictionary of modalities.
                 for name_modality in name_modalities:
@@ -254,16 +254,17 @@ def convert_dicom_2_nifti(source: str, dest: str, modes_to_preprocess: list):
 def resize_file(folder_index, folders, dest, image_shape, interpolation='linear'):  # resize 1 patient folder [MR, CT, ...]
     """Process 1 patient"""
 
-    # Folder: patient
+    # The folder variable represent the patient.
     folder = folders[folder_index]
     name = path_utils.get_filename_without_extension(folder)
 
-    # Files: modalitites
     files = glob.glob(os.path.join(folder, "*"))
 
+    # Get all modalities for the current patient.
     if os.path.isdir(files[0]):
         files = glob.glob(os.path.join(files[0], "*"))
 
+    # For each modality.
     for file_mode in files:
         output_dir = os.path.join(dest, name)
         path_utils.make_dir(output_dir, is_printing=False)
@@ -287,7 +288,7 @@ def resize_nifti_folder(source: str, dest: str, image_shape=(256, 256)):  # resc
 
     folders = glob.glob(os.path.join(source, "*"))
     try:
-        pool = Pool(processes=1)  # Multithreading
+        pool = Pool() # Pool(processes=1)  # Multithreading
         l = pool.starmap(resize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(image_shape)))
         pool.close()
     except:
@@ -332,12 +333,12 @@ def normalize_per_dataset(data, dataset, modes_args, low=0.0, hi=255.0):
 def normalize_file(folder_index, folders, dest, dataset, modes_args):
     """Process 1 patient"""
 
-    # Folder: patient
+    # The folder variable represent the patient.
     folder = folders[folder_index]
     name = path_utils.get_filename_without_extension(folder)
     files = glob.glob(os.path.join(folder, "*"))
 
-    # Get all modalitites.
+    # Get all modalitites for the current patient.
     if os.path.isdir(files[0]):
         files = glob.glob(os.path.join(files[0], "*"))
 
@@ -351,12 +352,12 @@ def normalize_file(folder_index, folders, dest, dataset, modes_args):
 
         try:
             print(f"Reading: {file_mode}")
-            volume = nib.load(file_mode)
-            data = volume.get_fdata()
+            volume = nib.load(file_mode) # read .nii.gz data
+            data = volume.get_fdata() # get pixel data
 
             data = normalize_per_dataset(data, dataset, modes_args[fname.split('.')[0]])
 
-            affine = volume.affine
+            affine = volume.affine # take the orientation
             image = nib.Nifti1Image(data, affine=affine)
             nib.save(image, output_file)
 
@@ -367,7 +368,7 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
     folders = glob.glob(os.path.join(source, "*"))
 
     try:
-       pool = Pool(processes=1) # Multithreading
+       pool = Pool() # Pool(processes=1) # Multithreading
        l = pool.starmap(normalize_file, zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)))
        pool.close()
     except:
@@ -389,9 +390,12 @@ def  convert_dataset_mi(
         is_idx_to_pos = np.arange(0, pop_range)
     else:
         is_idx_to_pos = np.array([])
+    if os.path.exists(os.path.join(dest, "CT_registration_problem.json")):
+        with open(os.path.join(dest, "CT_registration_problem.json")) as f:
+            CT_reg_otps = json.load(f)
 
     # Open normalized folder.
-    num_files, input_iter = open_dataset_patient(source, transpose_img)
+    num_files, input_iter = open_dataset_patient(source, transpose_img) # Core function.
 
     # Create a temp folder to be save into zipfile
     temp = os.path.join(dest, "temp")
@@ -405,7 +409,7 @@ def  convert_dataset_mi(
 
     for idx, image in enumerate(input_iter):
 
-        folder_name = image["folder_name"]
+        folder_name = image["folder_name"] # patient name
         idx_name = image["name"]
         archive_fname = f"{folder_name}/{idx_name}.pickle"
         path_utils.make_dir(os.path.join(temp, f"{folder_name}"), is_printing=False)
@@ -417,6 +421,13 @@ def  convert_dataset_mi(
             continue
         if image['depth_index'] in (image['total_depth'] - is_idx_to_pos -1):
             continue
+        if folder_name in list(CT_reg_otps.keys()):
+            if CT_reg_otps[folder_name][0] != -1:
+                is_idx_to_pos_temp = np.arange(0, CT_reg_otps[folder_name][0])
+            else:
+                is_idx_to_pos_temp = np.arange(image['total_depth'], CT_reg_otps[folder_name][1], step=-1)
+            if image['depth_index'] in is_idx_to_pos_temp:
+                continue
 
         img = image["img"]
 

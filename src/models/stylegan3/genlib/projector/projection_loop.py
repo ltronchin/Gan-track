@@ -10,8 +10,55 @@ import torch
 import torch.nn.functional as F
 import time
 from time import perf_counter
+from torch.autograd import Variable
+
 
 import copy
+
+import matplotlib.pyplot as plt
+# Set plot parameters.
+plt.rcParams['figure.figsize'] = [8, 6]
+plt.rcParams['figure.dpi'] = 400
+plt.rcParams['font.size'] = 16
+
+import pandas as pd
+
+from src.utils import util_general
+
+#----------------------------------------------------------------------------
+# Reports.
+
+def intersection(l1, l2):
+    l = [value for value in l1 if value in l2]
+    return l
+
+def get_cmap(n: int, name: str ='hsv'):
+    """Returns a function that maps each index in 0, 1, ..., n-1 to a distinct
+    RGB color; the keyword argument name must be a standard mpl colormap name."""
+    return plt.cm.get_cmap(name, n)
+
+def plot_training(history, plot_training_dir, columns_to_plot=None, **plot_args):
+
+    if not isinstance(history, pd.DataFrame):
+        history = pd.DataFrame.from_dict(history, orient='index').transpose()
+
+    columns_in_history = list(history.keys())
+    if columns_to_plot is not None:
+        columns_to_plot = intersection(columns_in_history, columns_to_plot)
+    else:
+        columns_to_plot = columns_in_history
+
+    cmap = get_cmap(n=len(columns_to_plot)+1, name='hsv')
+    plt.figure(figsize=(8, 6))
+    for idx, key in enumerate(columns_to_plot):
+        plt.plot(history[key], label=key, c=cmap(idx))
+
+    plt.title(plot_args['title'])
+    plt.xlabel(plot_args['xlab'])
+    plt.ylabel(plot_args['ylab'])
+    plt.legend()
+    plt.savefig(os.path.join(plot_training_dir, f"{plot_args['title']}.png"), dpi=400, format='png')
+    plt.show()
 
 # ----------------------------------------------------------------------------
 
@@ -20,11 +67,13 @@ def project(
         target: torch.Tensor,  # [1, C, H, W], dynamic range [0.0, 255.0], dtype float32 W & H must match G output resolution
         *,
         num_steps =1000,
+        w_lpips: float = 1.0,
+        w_pix: float = 1e-6,
         w_avg_samples = 10000,
         initial_learning_rate =  0.1,
         initial_noise_factor = 0.05,
-        lr_rampdown_length = 0.25,  ## time that lr taks to go 0 again the "initial_learning_rate"
-        lr_rampup_length = 0.05, #0.25 # time that lr taks to reach the "initial_learning_rate" starting from 0
+        lr_rampdown_length = 0.25,  # time that lr taks to go 0 again the "initial_learning_rate"
+        lr_rampup_length = 0.05, # time that lr taks to reach the "initial_learning_rate" starting from 0
         noise_ramp_length = 0.75,
         regularize_noise_weight =  1e5,
         verbose = False,
@@ -39,12 +88,12 @@ def project(
         }
     elif target.shape[1] == 3:  # Already in the correct format
         target_modatilies = {
-            modalities[0]: target
+            modalities[0]:  target
         }
         pass
     else: # Multimodal input.
         target_modatilies = {
-            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
+            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities) # todo clone?
         }
 
     def logprint(*args):
@@ -72,10 +121,11 @@ def project(
     # Compute the target LPIPS features for the real images using VGG16.
     target_features = {}
     for mode in modalities:
-        target_mode = target_modatilies[mode].to(device).to(torch.float32)
+        target_mode = target_modatilies[mode].clone()
+        target_mode = target_mode.to(device).to(torch.float32)
         if target_mode.shape[2] > 256:
             target_mode = F.interpolate(target_mode, size=(256, 256), mode='area')
-        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)
+        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)  # todo why the operation change target_mode?
 
     w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True)  # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
@@ -86,6 +136,7 @@ def project(
         buf[:] = torch.randn_like(buf)
         buf.requires_grad = True
 
+    history = util_general.list_dict()
     for step in range(num_steps):
         # Learning rate schedule.
         t = step / num_steps
@@ -112,25 +163,36 @@ def project(
             }
         elif synth.shape[1] == 3:  # already in the correct format
             synth_modalities = {
-                modalities[0]: synth
+                modalities[0]:synth
             }
             pass
         else:  # Multimodal input.
             synth_modalities = {
                 mode: synth[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
-            }
+            } # todo define a new variable for each channel here?
+            
+
+        # Pixel-based loss.
+        pix_loss = {}
+        for mode in modalities:
+            synth_mode = synth_modalities[mode].clone()
+            target_mode = target_modatilies[mode].clone()
+            target_mode = target_mode.to(device).to(torch.float32)
+            pix_loss[mode] = w_pix * (torch.mean((target_mode.float() - synth_mode.float()) ** 2))
+
+        # Compute the synthetic LPIPS features for the synthetic images using VGG16.
         synth_features = {}
         dist = {}
         for mode in modalities:
-            synth_mode = synth_modalities[mode]
+            synth_mode = synth_modalities[mode].clone()
             # Downsample image to 256x256 if it's larger than that. VGG was built for 256x256 images.
             if synth_mode.shape[2] > 256:
                 synth_mode = F.interpolate(synth_mode, size=(256, 256), mode='area')
             # Features for synth images.
-            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True)
+            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True) # todo why the operation change synth_mode?
 
             # Compute distance.
-            dist[mode] = (target_features[mode] - synth_features[mode]).square().sum()
+            dist[mode] = w_lpips * ((target_features[mode] - synth_features[mode]).square().sum())
 
         # Noise regularization.
         reg_loss = 0.0
@@ -142,9 +204,16 @@ def project(
                 if noise.shape[2] <= 8:
                     break
                 noise = F.avg_pool2d(noise, kernel_size=2)
+
+        # Compute the total loss
         loss = reg_loss * regularize_noise_weight
+        history['reg_loss'].append(reg_loss.item() * regularize_noise_weight)
         for mode in modalities:
-            loss += dist[mode]
+            loss = loss + dist[mode] + pix_loss[mode]
+            history[f'{mode}_lpips_loss'].append(dist[mode].item())
+            history[f'{mode}_pix_loss'].append(pix_loss[mode].item())
+
+        history['tot_loss'].append(loss.item())
 
         # Step
         optimizer.zero_grad(set_to_none=True)
@@ -153,14 +222,12 @@ def project(
 
         desc = ""
         for mode in modalities:
-            desc += f"dist_{mode} {dist[mode]:<4.2f} "
+            desc += f"dist_{mode} {dist[mode]:<4.2f}--pix_loss_{mode} {pix_loss[mode]:<4.2f} "
 
-        logprint(f'step {step + 1:>4d}/{num_steps}, lr: {lr}: {desc}loss {float(loss):<5.2f}')
+        logprint(f'step {step + 1:>4d}/{num_steps}, lr: {lr}: {desc} loss {float(loss):<5.2f}')
 
         # Save projected W for each optimization step.
         w_out[step] = w_opt.detach()[0]
-        # todo save loss
-        # todo save distances
 
         # Normalize noise.
         with torch.no_grad():
@@ -168,7 +235,9 @@ def project(
                 buf -= buf.mean()
                 buf *= buf.square().mean().rsqrt()
 
-    return w_out.repeat([1, G.mapping.num_ws, 1])
+    # Format history
+    history = pd.DataFrame.from_dict(history, orient='index').transpose()
+    return w_out.repeat([1, G.mapping.num_ws, 1]), history
 
 def run_projection(
         img_idx: int,
@@ -179,8 +248,11 @@ def run_projection(
         modalities: list,
         dtype: str,
         num_steps: int,
+        w_lpips: float,
+        w_pix: float,
         save_video: bool,
         save_final_projection: bool,
+        save_optimization_history: bool,
         **kwargs
 ):
     """Project given image to the latent space of pretrained network pickle."""
@@ -191,24 +263,44 @@ def run_projection(
 
     assert img_tensor.detach().cpu().numpy().dtype == dtype
     assert img_tensor.min().item() >= 0.0
+    assert img_tensor.max().item() > 1.0
     assert img_tensor.max().item() <= 255.0
     assert img_tensor.shape[2] == G.img_resolution # check over resolution
     assert img_tensor.shape[1] == G.img_channels # check over the number of channel
 
     # Optimize projection.
     start_time = perf_counter()
-    projected_w_steps = project(
+    projected_w_steps, history = project(
         G=G,
         target=img_tensor,  # pylint: disable=not-callable
         num_steps=num_steps,
+        w_lpips=w_lpips,
+        w_pix=w_pix,
         verbose=True,
         device=device,
         modalities=modalities
     )
     print(f'Elapsed: {(perf_counter() - start_time):.1f} s')
 
-    # Render debug output: optional video and projected image and W vector.
     os.makedirs(outdir, exist_ok=True)
+    if save_optimization_history:
+        if 'claro' in outdir:
+            plot_training(
+                history=history, plot_training_dir=outdir, columns_to_plot=['CT_lpips_loss'], title= 'Lpips Loss', xlab='Step', ylab='Loss'
+            )
+            plot_training(
+                history=history, plot_training_dir=outdir, columns_to_plot=['CT_pix_loss'], title= 'Pix Loss', xlab='Step', ylab='Loss'
+            )
+        else:
+            plot_training(
+                history=history, plot_training_dir=outdir, columns_to_plot=['MR_nonrigid_CT_lpips_loss', 'MR_MR_T2_lpips_loss'], title= 'Lpips Loss modalities', xlab='Step', ylab='Loss'
+            )
+            plot_training(
+                history=history, plot_training_dir=outdir, columns_to_plot=['MR_nonrigid_CT_pix_loss', 'MR_MR_T2_pix_loss'], title= 'Pix Loss modalities', xlab='Step', ylab='Loss'
+            )
+    history.to_csv(os.path.join(outdir, 'optimization_loss.csv'))
+
+    # Render debug output: optional video and projected image and W vector.
     if save_video:
         synth_image_list = []
         for projected_w in projected_w_steps:
@@ -252,8 +344,8 @@ def projection_loop(
     num_gpus                = 1,        # Number of GPUs participating in the training.
     rank                    = 0,        # Rank of the current process in [0, num_gpus[.
     batch_size              = 1,        # Total batch size for one training iteration.
-    image_snapshot_ticks=50,  # How often to save image snapshots? None = disable.
-    network_snapshot_ticks=50,  # How often to save network snapshots? None = disable.
+    image_snapshot_ticks    =50,  # How often to save image snapshots? None = disable.
+    network_snapshot_ticks  =50,  # How often to save network snapshots? None = disable.
     cudnn_benchmark         = True,     # Enable torch.backends.cudnn.benchmark?
 ):
 
@@ -279,7 +371,7 @@ def projection_loop(
     # todo parameter tuning
     # todo add a MSE based loss function on x vs x_tilde
     # todo add parameter search over lambda
-    projected_w = np.zeros(shape=(len(training_set), 14, 512), dtype=float) # todo parametrize 14 and 512
+    projected_w = np.zeros(shape=(len(training_set), 14, 512), dtype=float)
     idx = 0
     for phase_real_img, _ in training_set_iterator:
 
@@ -292,6 +384,8 @@ def projection_loop(
 
     with open(os.path.join(run_dir,'projected_w'), 'wb') as handle:
         pickle.dump(projected_w, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+# ----------------------------------------------------------------------------
 
 def projection_test(
         target_fname=           '.',    # Path to image to invert
@@ -314,8 +408,15 @@ def projection_test(
 
     # Load single Target Image.
     print('Loading Test Image...')
-    target_pil = Image.open(target_fname).convert('L')  # convert in grayscale
-    target = torch.Tensor(np.array(target_pil))  # convert to Torch Tensor
+
+    target_pil = Image.open(target_fname)
+    if target_pil.format != 'TIFF':
+        target_pil = Image.open(target_fname).convert('L')  # convert in grayscale
+    target_numpy = np.array(target_pil)
+    if target_numpy.max() <= 1:
+        print(f"Unsupported max value : Expected values in [0, 255] but got [{target_numpy.min()}, {target_numpy.max()}]!")
+        target_numpy = target_numpy * 255.0
+    target = torch.Tensor(target_numpy)  # convert to Torch Tensor
     if target.ndim != 4:
         print(f"Unsupported input dimension: Expected 4D (batched) input but got input of size: {target.shape}! Let's add dimension!")
         for _ in range(4 - target.ndim):
@@ -349,20 +450,44 @@ if __name__ == "__main__":
     my_env["PATH"] = "/home/lorenzo/miniconda3/envs/stylegan3/bin:" + my_env["PATH"]
     os.environ.update(my_env)
 
-    training_set_kwargs = {
-        'modalities': ['CT'],
-        'dtype': 'float32'
-    }
-    projector_kwargs = {
-        'outdir_model': "/home/lorenzo/Gan tracker/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
-        'num_steps': 1000,
-        'save_video': True,
-        'save_final_projection': True
-    }
+    '''
+    Options:
+        For claro retrospettivo
+            outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
+            run_dir="/home/lorenzo/Gan tracker/reports/claro_retrospettivo/projection-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096_network-snapshot-005000.pkl/"
+            target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo/stylegan2-ada/100151470_103.png"
+        
+        For claro retrospettivo no casting
+            outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl",
+            run_dir="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096-network-snapshot-004400.pkl/"
+            target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.png"
+    '''
 
-    projection_test(
-        target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo/stylegan2-ada/100151470_103.png",
-        run_dir = "/home/lorenzo/Gan tracker/reports/claro_retrospettivo/projection-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096_network-snapshot-005000.pkl/",
-        training_set_kwargs = training_set_kwargs,
-        projector_kwargs = projector_kwargs
-    ) # pylint: disable=no-value-for-parameter
+    w_pix_list = [0.0, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+    w_lips = 1.0
+    for idx_exp, w_pix in enumerate(w_pix_list):
+
+        outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl"
+        run_dir=f"/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/0000{idx_exp}-stylegan2-w_lips_{w_lips}-w_pix_{w_pix}-network-snapshot-004400.pkl/"
+        target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.tif"
+
+        training_set_kwargs = {
+            'modalities': ['CT'],
+            'dtype': 'float32'
+        }
+        projector_kwargs = {
+            'outdir_model': outdir_model,
+            'num_steps': 1000,
+            'w_lpips': w_lips,
+            'w_pix': w_pix,
+            'save_video': True,
+            'save_final_projection': True,
+            'save_optimization_history': True
+        }
+
+        projection_test(
+            target_fname=target_fname,
+            run_dir = run_dir,
+            training_set_kwargs = training_set_kwargs,
+            projector_kwargs = projector_kwargs
+        ) # pylint: disable=no-value-for-parameter

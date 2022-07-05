@@ -165,7 +165,7 @@ def ger_outdir_model_path(outdir, outdir_model, c):
         gettrace = getattr(sys, 'gettrace', None)
         if gettrace():
             print('Hmm, Big Debugger is watching me')
-            user_input = 'MR_MR_T2'
+            user_input = 'MR_MR_T2' # 'MR_nonrigid_CT'
         else:
             print('No sys.gettrace')
             user_input = input(f"To select network-snapshot choose the modality from {[*fid_min]}")
@@ -205,8 +205,11 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 @click.option('--network_pkl',  help='Network pickle filename or Metric filename', type=str, required=True)
 @click.option('--target_fname', help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
 @click.option('--num-steps',    help='Number of optimization steps', type=int, default=1000, show_default=True)
+@click.option('--w_lpips',    help='Weight of lpips loss', type=float, default=1.0, show_default=True)
+@click.option('--w_pix',    help='Weight of recontruction loss', type=float, default=1.0, show_default=True)
 @click.option('--save_video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
 @click.option('--save_final_projection', help='Save the final results of projection', type=bool, default=True, show_default=True)
+@click.option('--save_optimization_history', help='Save the history of optimization process', type=bool, default=True, show_default=True)
 def main(**kwargs):
 
     # Initialize config.
@@ -231,8 +234,11 @@ def main(**kwargs):
     c.projector_kwargs.network_pkl = opts.network_pkl
     c.projector_kwargs.target_fname = opts.target_fname
     c.projector_kwargs.num_steps = opts.num_steps
+    c.projector_kwargs.w_lpips = opts.w_lpips
+    c.projector_kwargs.w_pix = opts.w_pix
     c.projector_kwargs.save_video = opts.save_video
     c.projector_kwargs.save_final_projection = opts.save_final_projection
+    c.projector_kwargs.save_optimization_history = opts.save_optimization_history
 
     # Save in outdir_model the directory that contains the results for StyleGAN2-ADA
     opts.outdir_model =  os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
@@ -240,7 +246,7 @@ def main(**kwargs):
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "projection-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}" # todo add projector parameters
+    desc = f"{dataset_name:s}-split_{opts.split}-stylegan_exp_{opts.experiment}-network_filename_{opts.network_pkl}-w_lips_{opts.w_lpips}-w_pix_{opts.w_pix}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
 

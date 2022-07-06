@@ -377,12 +377,59 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
 
 #----------------------------------------------------------------------------
 
+def visualize(img):
+    x = []
+    for k, v in img.items():
+        x.append(v)
+
+    x = np.concatenate(x, axis=1)
+
+    import matplotlib.pyplot as plt
+
+    plt.imshow(x, cmap="gray", vmin=0, vmax=255)
+    plt.show()
+
+def sanity_check(image, pop_range, dest, patient_folder):
+    # Sanity check
+
+    x = image['img']
+
+    for m in list(x.keys()):
+        sanity_check_dir = os.path.join(dest, 'sanity_check_1', patient_folder, m)
+        path_utils.make_dir(sanity_check_dir, is_printing=False)
+        im = Image.fromarray(x[m] / 255)
+        im.save(os.path.join(sanity_check_dir, f"{image['name']}.tif"), 'tiff', compress_level=0, optimize=False)
+
+    if image['depth_index'] == pop_range:
+        ftoprint = 'first_from_stack'
+    elif image['depth_index'] == (image['total_depth'] - pop_range - 1):
+        ftoprint = 'last_from_stack'
+    else:
+        ftoprint = None
+
+    if ftoprint is not None:
+        print(f"{ftoprint}: {image['name']}")
+        for m in list(x.keys()):
+            sanity_check_dir = os.path.join(dest, 'sanity_check_1', f'{ftoprint}_{pop_range}', m)
+            path_utils.make_dir(sanity_check_dir, is_printing=False)
+            im = Image.fromarray(x[m] / 255)
+            im.save(os.path.join(sanity_check_dir, f"{image['name']}.tif"), 'tiff', compress_level=0, optimize=False)
+
 def  convert_dataset_mi(
     source: str,
     dest: str,
-    is_overwrite: bool = False,
     pop_range: int = 10,
-    transpose_img: bool = True):
+    transpose_img: bool = True,
+    is_overwrite: bool = False,
+    is_visualize=True
+):
+
+    def fix_orientation(x):
+        new_img = {}
+        for k, v in x.items():
+                # new_img[k] = np.flipud(v.transpose(1, 0))
+                new_img[k] = v.transpose(1, 0)
+        return new_img
 
     # The CT registration could be not completed for the first/last slices of the patient stack. "is_idx_to_pos" define the range to skip
     # at the beginning and end of the stack
@@ -398,7 +445,7 @@ def  convert_dataset_mi(
     num_files, input_iter = open_dataset_patient(source, transpose_img) # Core function.
 
     # Create a temp folder to be save into zipfile
-    temp = os.path.join(dest, "temp")
+    temp = os.path.join(dest, "temp_1")
 
     if os.path.isdir(temp) and is_overwrite:
         print(f"Removing {temp}")
@@ -415,6 +462,7 @@ def  convert_dataset_mi(
         path_utils.make_dir(os.path.join(temp, f"{folder_name}"), is_printing=False)
         out_path = os.path.join(temp, archive_fname)
 
+        # Skip the first/last slices of the stack
         if not is_overwrite and os.path.exists(out_path):
             continue
         if image['depth_index'] in is_idx_to_pos:
@@ -431,30 +479,18 @@ def  convert_dataset_mi(
 
         img = image["img"]
 
-        # Sanity check
-        for m in list(img.keys()):
-            sanity_check_dir = os.path.join(dest, 'sanity_check', folder_name, m)
-            path_utils.make_dir(sanity_check_dir, is_printing=False)
-            im = Image.fromarray(img[m]/255)
-            im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
-        if image['depth_index'] == pop_range:
-            print(f"\nFirst slice from stack: {idx_name}")
-            for m in list(img.keys()):
-                sanity_check_dir = os.path.join(dest, 'sanity_check', f'first_from_stack_{pop_range}', m)
-                path_utils.make_dir(sanity_check_dir, is_printing=False)
-                im = Image.fromarray(img[m] / 255)
-                im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
-        if image['depth_index'] == (image['total_depth'] - pop_range - 1):
-            print(f"Last slice from stack: {idx_name}")
-            for m in list(img.keys()):
-                sanity_check_dir = os.path.join(dest, 'sanity_check', f'last_from_stack_{pop_range}', m)
-                path_utils.make_dir(sanity_check_dir, is_printing=False)
-                im = Image.fromarray(img[m] / 255)
-                im.save(os.path.join(sanity_check_dir, f"{idx_name}.tif"), 'tiff', compress_level=0, optimize=False)
-
         # Transform may drop images.
         if img is None:
             continue
+
+        # Fix orientation --> already performed in input_iter
+        # img = fix_orientation(img)
+
+        # Sanity check
+        if random.uniform(0, 1) > 0.9:
+            if is_visualize:
+                visualize(img)
+        sanity_check(image=image, pop_range=pop_range, dest=dest, patient_folder=folder_name)
 
         # Error check to require uniform image attributes across # the whole dataset
         modalities = sorted(img.keys())
@@ -711,6 +747,7 @@ def prepare_Pelvis_2_1(**kwargs):
         dest_dir = interim_dir
         print(f"\nSave to zip, output folder: {dest_dir}")
         write_to_zip(source= os.path.join(data_dir), dest=dest_dir,  max_patients=opts.max_patients, split=opts.validation_split)
+
     print("May be the force with you!")
 
 #----------------------------------------------------------------------------

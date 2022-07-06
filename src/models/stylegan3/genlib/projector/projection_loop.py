@@ -93,7 +93,7 @@ def project(
         pass
     else: # Multimodal input.
         target_modatilies = {
-            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities) # todo clone?
+            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities) # is a leaf variable. No gradients needed
         }
 
     def logprint(*args):
@@ -169,8 +169,8 @@ def project(
         else:  # Multimodal input.
             synth_modalities = {
                 mode: synth[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
-            } # todo define a new variable for each channel here?
-            
+            } # todo clone to get the gradient to be backpropagated?
+
 
         # Pixel-based loss.
         pix_loss = {}

@@ -84,6 +84,10 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
     print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
+    # CUSTOMIZING START
+    print(f'Augmentation type:   {c.aug}')
+    print(f'ADA adjustment speed:{c.ada_kimg}')
+    # CUSTOMIZING END
     print()
 
     # Dry run?
@@ -156,6 +160,10 @@ def parse_comma_separated_list(s):
 @click.option('--cond',         help='Train conditional model', metavar='BOOL',                 type=bool, default=False, show_default=True)
 @click.option('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                   type=bool, default=False, show_default=True)
 @click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
+# CUSTOMIZING START-ADDING NEW PARAMETERs
+@click.option('--ada_kimg',     help='ADA adjustment speed',                                    type=click.IntRange(min=1), default=500, show_default=True)
+#@click.option('--aug_opts',    help='Augmentation transformation option to enable'             type=parse_comma_separated_list, default='', show_default=True) # todo options here
+# CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
 
@@ -286,14 +294,17 @@ def main(**kwargs):
         # CUSTOMIZING START -> deactivate some colour based augmentations --> brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0
         len_modalities = len(c.training_set_kwargs.modalities)
         if opts.dtype == 'uint8' and len_modalities == 1:
+            # todo create a dict where we have 1 for elements in the list and 0 in other cases
             c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1)
         else:
             c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0)
-        # CUSTOMIZING END
         if opts.aug == 'ada':
             c.ada_target = opts.target
+            c.ada_kimg = opts.ada_kimg
         if opts.aug == 'fixed':
             c.augment_p = opts.p
+        c.aug = opts.aug
+        # CUSTOMIZING END
 
     # Resume.
     if opts.resume is not None:
@@ -315,7 +326,7 @@ def main(**kwargs):
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}"
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{c.aug}-ada_kimg_{c.ada_kimg}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
     # CUSTOMIZING END

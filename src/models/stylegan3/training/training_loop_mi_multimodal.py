@@ -22,6 +22,7 @@ from torch_utils import misc
 from torch_utils import training_stats
 from torch_utils.ops import conv2d_gradfix
 from torch_utils.ops import grid_sample_gradfix
+import random
 
 import legacy
 # CUSTOMIZING START
@@ -47,6 +48,21 @@ def convert_to_grayscale(images, low=None, hi=None): # rescale the image into th
             temp[c, 0, :, :] = y
             c += 1
     return temp
+
+def visualize_batch(batch_tensor):
+    import matplotlib.pyplot as plt
+
+    x = []
+    for batch_idx in range(2): # range(batch_tensor.shape[0]):
+        img = batch_tensor[batch_idx].detach().cpu().numpy() # 2 x 256 x 256
+        for mode_idx in range(img.shape[0]):
+            x.append(img[mode_idx])
+
+    x = np.concatenate(x, axis=1)
+
+    plt.imshow(x, cmap='gray', vmin=0.0, vmax=255.0)
+    plt.show()
+
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
 
@@ -143,6 +159,9 @@ def training_loop(
     ema_rampup              = 0.05,     # EMA ramp-up coefficient. None = no rampup.
     G_reg_interval          = None,     # How often to perform regularization for G? None = disable lazy regularization.
     D_reg_interval          = 16,       # How often to perform regularization for D? None = disable lazy regularization.
+    # CUSTOMIZING START
+    aug                     = 'ada',    # Type of augmentation
+    # CUSTOMIZING STOP
     augment_p               = 0,        # Initial value of augmentation probability.
     ada_target              = None,     # ADA target value. None = fixed p.
     ada_interval            = 4,        # How often to perform ADA adjustment?
@@ -159,7 +178,7 @@ def training_loop(
 ):
     # Initialize.
     start_time = time.time()
-    device = torch.device('cuda', rank) # device = torch.device('cuda:1')
+    device = torch.device('cuda', rank) #device = torch.device('cuda', rank) # device = torch.device('cuda:1')
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
     torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
@@ -297,6 +316,10 @@ def training_loop(
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
             phase_real_img, phase_real_c = next(training_set_iterator)
+            # CUSTOMIZATION START
+            #if random.uniform(0, 1) > 0.9:
+            # visualize_batch(phase_real_img)
+            # CUSTOMIZATION END
             phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
             all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
@@ -352,7 +375,7 @@ def training_loop(
         cur_nimg += batch_size
         batch_idx += 1
 
-        # Execute ADA heuristic.
+        # Execute ADA heuristic. # todo check here for ada adaptation!
         if (ada_stats is not None) and (batch_idx % ada_interval == 0):
             ada_stats.update()
             adjust = np.sign(ada_stats['Loss/signs/real'] - ada_target) * (batch_size * ada_interval) / (ada_kimg * 1000)

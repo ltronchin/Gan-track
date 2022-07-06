@@ -378,7 +378,7 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
             normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_args=modes_args)
 
 # ----------------------------------------------------------------------------
-# Mask nifti file # todo
+# Mask nifti file
 
 def find_mask_file(folder_index, folders, dest, dataset):
     def get_ref_file(dataset): # get reference modality to mask

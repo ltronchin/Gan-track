@@ -15,6 +15,23 @@ from torch_utils.ops import conv2d_gradfix
 from torch_utils.ops import upfirdn2d
 
 #----------------------------------------------------------------------------
+# CUSTOMIZATION START
+def visualize_batch(img_tensor): # todo add save options
+    import matplotlib.pyplot as plt
+
+    x = []
+    for batch_idx in range(2):  # range(batch_tensor.shape[0]):
+        img = img_tensor[batch_idx].detach().cpu().numpy()  # 2 x 256 x 256
+        for mode_idx in range(img.shape[0]):
+            x.append(img[mode_idx])
+
+    x = np.concatenate(x, axis=1)
+
+    plt.imshow(x, cmap='gray', vmin=0.0, vmax=255.0)
+    plt.axis('off')
+    plt.show()
+# CUSTOMIZATION END
+#----------------------------------------------------------------------------
 
 class Loss:
     def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, gain, cur_nimg): # to be overridden by subclass
@@ -49,15 +66,21 @@ class StyleGAN2Loss(Loss):
         img = self.G.synthesis(ws, update_emas=update_emas)
         return img, ws
 
-    def run_D(self, img, c, blur_sigma=0, update_emas=False):
+    # CUSTOMIZATION START
+    def run_D(self, img, c, blur_sigma=0, update_emas=False, is_printing=False):
+    # CUSTOMIZATION STOP
         blur_size = np.floor(blur_sigma * 3)
         if blur_size > 0:
             with torch.autograd.profiler.record_function('blur'):
                 f = torch.arange(-blur_size, blur_size + 1, device=img.device).div(blur_sigma).square().neg().exp2()
                 img = upfirdn2d.filter2d(img, f / f.sum())
         if self.augment_pipe is not None:
-            img = self.augment_pipe(img)
-        logits = self.D(img, c, update_emas=update_emas)
+            img = self.augment_pipe(img) # HERE WE CALL THE AUGMENTATION PIPELINE
+        # CUSTOMIZATION START
+        if is_printing:
+            visualize_batch((img + 1) * (255 / 2))
+        # CUSTOMIZATION STOP
+        logits = self.D(img, c, update_emas=update_emas) # image feeded to the Discriminator
         return logits
 
     def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, gain, cur_nimg):
@@ -116,7 +139,9 @@ class StyleGAN2Loss(Loss):
             name = 'Dreal' if phase == 'Dmain' else 'Dr1' if phase == 'Dreg' else 'Dreal_Dr1'
             with torch.autograd.profiler.record_function(name + '_forward'):
                 real_img_tmp = real_img.detach().requires_grad_(phase in ['Dreg', 'Dboth'])
-                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma)
+                # CUSTOMIZATION START
+                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, is_printing=False) # HERE is_printing to True to see the Real Augmented images
+                # CUSTOMIZATION STOP
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())
 

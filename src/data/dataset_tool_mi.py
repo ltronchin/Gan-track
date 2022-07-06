@@ -36,6 +36,8 @@ import nibabel as nib
 from multiprocessing import Pool
 import shutil
 import random
+import scipy
+import nilearn
 
 import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
@@ -375,6 +377,129 @@ def normalize_folder(source: str, dest: str,  dataset: str,  modes_args: dict):
         for idx_pat in range(len(folders)):
             normalize_file(folder_index=idx_pat, folders=folders, dest=dest, dataset=dataset, modes_args=modes_args)
 
+# ----------------------------------------------------------------------------
+# Mask nifti file # todo
+
+def find_mask_file(folder_index, folders, dest, dataset):
+    def get_ref_file(dataset): # get reference modality to mask
+        if dataset == "brats20":
+            return "t2"
+        elif dataset == "spleen":
+            return "img"
+        elif dataset == "heart":
+            return "img"
+        elif dataset == "kits19":
+            return "imaging"
+        elif dataset == "Pelvis_2.1":
+            return "MR_MR_T2"
+        else:
+            raise NotImplementedError(f"{dataset:s} is not implemented")
+
+    def get_largest_connected_region(data):
+        # Find the largest connected region.
+        if np.sum(data) > 0:
+            label, num_label = scipy.ndimage.label(data == 1)
+            size = np.bincount(label.ravel())
+            biggest_label = size[1:].argmax() + 1
+            clump_mask = (label == biggest_label).astype(np.uint8)
+            return clump_mask
+        else:
+            return data
+
+    def remove_small_regions(data, min_size):
+        # Let us create a binary mask.
+        # It is 0 everywhere `segmentation_mask` is 0 and 1 everywhere else.
+        binary_mask = data.copy()
+        binary_mask[binary_mask != 0] = 1
+
+        # Now, we perform region labelling. This way, every connected component
+        # will have their own colour value.
+        labelled_mask, num_labels = scipy.ndimage.label(binary_mask)
+
+        # Let us now remove all the too small regions.
+        refined_mask = data.copy()
+        minimum_cc_sum = min_size
+        for label in range(num_labels):
+            if np.sum(refined_mask[labelled_mask == label]) < minimum_cc_sum:
+                refined_mask[labelled_mask == label] = 0
+
+        return refined_mask
+
+    def smooth_mask(volume_ref, dataset):
+        if dataset == "spleen":
+            threshold = 30
+            m = (volume_ref.get_fdata() >= threshold).astype(np.uint8)
+            m = get_largest_connected_region(m)
+            m = scipy.ndimage.morphology.binary_fill_holes(m).astype(np.uint8)
+            clump_mask_before = m.copy()
+            m = scipy.ndimage.morphology.binary_closing(
+                m, structure=np.ones((3, 3, 3))
+            ).astype(np.uint8)
+            m = m + clump_mask_before
+            m = (m > 0).astype(np.uint8)
+            m = scipy.ndimage.filters.median_filter(m, size=3)
+        elif dataset == "heart":
+            threshold = 5
+            m = (volume_ref.get_fdata() >= threshold).astype(np.uint8)
+            for j in range(m.shape[-1]):
+                m[:, :, j] = scipy.ndimage.morphology.binary_closing(
+                    m[:, :, j], structure=np.ones((5, 5))
+                ).astype(np.uint8)
+                m[:, :, j] = get_largest_connected_region(m[:, :, j])
+                m[:, :, j] = scipy.ndimage.morphology.binary_fill_holes(m[:, :, j])
+                m[:, :, j] = scipy.ndimage.filters.median_filter(m[:, :, j], size=11)
+        elif dataset == "kits19":
+            threshold = 5
+            m = (volume_ref.get_fdata() >= threshold).astype(np.uint8)
+            for j in range(m.shape[-1]):
+                # m[:, :, j] = scipy.ndimage.morphology.binary_closing(
+                #     m[:, :, j], structure=np.ones((5, 5))
+                # ).astype(np.uint8)
+                # m[:, :, j] = get_largest_connected_region(m[:, :, j])
+                m[:, :, j] = scipy.ndimage.morphology.binary_fill_holes(m[:, :, j])
+                m[:, :, j] = scipy.ndimage.filters.median_filter(m[:, :, j], size=9)
+            m = remove_small_regions(m, min_size=125)
+
+        affine = volume_ref.affine
+        mask = nib.Nifti1Image(m, affine=affine)
+
+        return mask
+
+    folder = folders[folder_index]
+    name = path_utils.get_filename_without_extension(folder)
+    ref = get_ref_file(dataset)
+    file_ref = os.path.join(folder, f"{ref}.nii.gz")
+
+    output_dir = os.path.join(dest, name)
+    path_utils.make_dir(output_dir)
+
+    output_file = os.path.join(output_dir, f"mask.nii.gz")
+
+    # try:
+    print(f"Reading: {file_ref}")
+    volume_ref = nib.load(file_ref)
+    if dataset in ["spleen", "heart", "kits19"]:
+        mask = smooth_mask(volume_ref, dataset)
+    else:
+        mask = nilearn.masking.compute_epi_mask(volume_ref)
+    nib.save(mask, output_file)
+    # except:
+    #     raise IOError(f"fail to find mask {file_ref:s}")
+
+
+def find_mask_folder(source: str, dest: str, dataset: str):
+    # multithreading
+    folders = glob.glob(os.path.join(source, "*"))
+
+    # find_mask_file(0, folders, dest, dataset)
+
+    pool = Pool(processes=1)
+    l = pool.starmap(
+        find_mask_file,
+        zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)),
+    )
+    pool.close()
+
 #----------------------------------------------------------------------------
 
 def visualize(img):
@@ -637,7 +762,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--dataset', help='Name of the input dataset', required=True, type=str, default='Pelvis_2.1')
 @click.option('--resolution', help='Resolution of the processed images', required=True, type=int, default=256)
 @click.option('--max_patients', help='Number of patients to preprocess', required=True, type=int, default=100000)
-@click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
+@click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'mask_nifti', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
 @click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
 @click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
 @click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', required=True, type=int, default=10)
@@ -712,25 +837,41 @@ def prepare_Pelvis_2_1(**kwargs):
         print('The info file of the selected dataset already exists.')
     else:
         print(f'Export statistics.')
-        export_statistics(dataset_name=opts.dataset, data_dir=data_dir, reports_dir=interim_dir)
+        export_statistics(
+            dataset_name=opts.dataset, data_dir=data_dir, reports_dir=interim_dir
+        )
 
     # From dicom to nifti
     if opts.processing_step == 'process_dicom_2_nifti':
         dest_dir = os.path.join(interim_dir, 'nifti_volumes')
         print(f"\nConvert to nifti, output folder: {dest_dir}")
-        convert_dicom_2_nifti(source=data_dir, dest=dest_dir, modes_to_preprocess=list(modes_args.keys()))
+        convert_dicom_2_nifti(
+            source=data_dir, dest=dest_dir, modes_to_preprocess=list(modes_args.keys())
+        )
 
     # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
     if opts.processing_step == 'process_nifti_resized':
         dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}')
         print(f"\nResize to resolution {opts.resolution}, output folder: {dest_dir}")
-        resize_nifti_folder(source=data_dir, dest=dest_dir, image_shape=(opts.resolution, opts.resolution))
+        resize_nifti_folder(
+            source=data_dir, dest=dest_dir, image_shape=(opts.resolution, opts.resolution)
+        )
 
     # Normalize each volume
     if opts.processing_step == 'process_nifti_normalized':
         dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_normalized')
         print(f"\nNormalize each volume, output folder: {dest_dir}")
-        normalize_folder(source=data_dir, dest=dest_dir, dataset=opts.dataset, modes_args=cfg['data']['modes'])
+        normalize_folder(
+            source=data_dir, dest=dest_dir, dataset=opts.dataset, modes_args=cfg['data']['modes']
+        )
+
+    # # Find mask of each volume # NOT IMPLEMENTED
+    # if opts.processing_step == 'mask_nifti':
+    #     dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_masked')
+    #     print(f"\nMask each volume using nilearn package, output folder: {dest_dir}")
+    #     find_mask_folder(
+    #         source=data_dir,  dest=dest_dir,   dataset=opts.dataset,
+    #      )
 
     # Write to pickle
     if opts.processing_step == 'snap_pickle':
@@ -740,13 +881,17 @@ def prepare_Pelvis_2_1(**kwargs):
         print("Each patient folder contains one .pkl file per slice")
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
-        convert_dataset_mi(source=data_dir, dest=dest_dir, pop_range=10, transpose_img = True)
+        convert_dataset_mi(
+            source=data_dir, dest=dest_dir, pop_range=10, transpose_img = True
+        )
 
     # Save as zip
     if opts.processing_step == 'snap_zip':
         dest_dir = interim_dir
         print(f"\nSave to zip, output folder: {dest_dir}")
-        write_to_zip(source= os.path.join(data_dir), dest=dest_dir,  max_patients=opts.max_patients, split=opts.validation_split)
+        write_to_zip(
+            source= os.path.join(data_dir), dest=dest_dir,  max_patients=opts.max_patients, split=opts.validation_split
+        )
 
     print("May be the force with you!")
 

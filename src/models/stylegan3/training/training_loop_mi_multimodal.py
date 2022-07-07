@@ -27,6 +27,7 @@ import random
 import legacy
 # CUSTOMIZING START
 from metrics import metric_main_mi_multimodal
+import requests
 # CUSTOMIZING END
 
 # CUSTOMIZING START
@@ -121,6 +122,16 @@ def save_image_grid(img, fname, grid_size):
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
 
+#----------------------------------------------------------------------------
+# CUSTOMIZING START
+def notification_ifttt(info):
+    private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
+    url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
+    requests.post(url, data={'value1': "Update --- "+ str(info)})
+
+# CUSTOMIZING END
+#----------------------------------------------------------------------------
+
 def training_loop(
     run_dir                 = '.',      # Output directory.
     training_set_kwargs     = {},       # Options for training set.
@@ -144,9 +155,6 @@ def training_loop(
     ema_rampup              = 0.05,     # EMA ramp-up coefficient. None = no rampup.
     G_reg_interval          = None,     # How often to perform regularization for G? None = disable lazy regularization.
     D_reg_interval          = 16,       # How often to perform regularization for D? None = disable lazy regularization.
-    # CUSTOMIZING START
-    aug                     = 'ada',    # Type of augmentation
-    # CUSTOMIZING STOP
     augment_p               = 0,        # Initial value of augmentation probability.
     ada_target              = None,     # ADA target value. None = fixed p.
     ada_interval            = 4,        # How often to perform ADA adjustment?
@@ -233,6 +241,11 @@ def training_loop(
     # CUSTOMIZATION START -- added parameters run_dir, batch_size
     loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, run_dir=run_dir, batch_size=batch_size, **loss_kwargs) # subclass of training.loss.Loss
     # CUSTOMIZATION END
+
+    # CUSTOMIZATION START -- added trigger for training start
+    notification_ifttt('Stylegan-2 ada Training Start!')
+    # CUSTOMIZATION END
+
     phases = []
     for name, module, opt_kwargs, reg_interval in [('G', G, G_opt_kwargs, G_reg_interval), ('D', D, D_opt_kwargs, D_reg_interval)]:
         if reg_interval is None:
@@ -492,5 +505,10 @@ def training_loop(
     if rank == 0:
         print()
         print('Exiting...')
+        # CUSTOMIZATION START -- added trigger for training stop
+        notification_ifttt('Stylegan-2 ada Training Stop!')
+        # CUSTOMIZATION END
+
+
 
 #----------------------------------------------------------------------------

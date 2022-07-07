@@ -453,23 +453,23 @@ if __name__ == "__main__":
     '''
     Options:
         For claro retrospettivo
-            outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
-            run_dir="/home/lorenzo/Gan tracker/reports/claro_retrospettivo/projection-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096_network-snapshot-005000.pkl/"
-            target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo/stylegan2-ada/100151470_103.png"
+            outdir_model="/home/lorenzo/Gan-track/reports/claro_retrospettivo/training-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl",
+            run_dir="/home/lorenzo/Gan-track/reports/claro_retrospettivo/projection-runs/claro_retrospettivo/CT/00000-stylegan2--gpus2-batch32-gamma0.4096_network-snapshot-005000.pkl/"
+            target_fname="/home/lorenzo/Gan-track/data/interim/claro_retrospettivo/stylegan2-ada/100151470_103.png"
         
         For claro retrospettivo no casting
-            outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl",
-            run_dir="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096-network-snapshot-004400.pkl/"
-            target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.png"
+            outdir_model="/home/lorenzo/Gan-track/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl",
+            run_dir="/home/lorenzo/Gan-track/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096-network-snapshot-004400.pkl/"
+            target_fname="/home/lorenzo/Gan-track/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.png"
     '''
 
     w_pix_list = [0.0, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
     w_lips = 1.0
     for idx_exp, w_pix in enumerate(w_pix_list):
 
-        outdir_model="/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl"
-        run_dir=f"/home/lorenzo/Gan tracker/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/0000{idx_exp}-stylegan2-w_lips_{w_lips}-w_pix_{w_pix}-network-snapshot-004400.pkl/"
-        target_fname="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.tif"
+        outdir_model="/home/lorenzo/Gan-track/reports/claro_retrospettivo_no_casting/training-runs/claro_retrospettivo_no_casting/CT/00000-stylegan2-stylegan2-ada-gpus2-batch32-gamma0.4096/network-snapshot-004400.pkl"
+        run_dir=f"/home/lorenzo/Gan-track/reports/claro_retrospettivo_no_casting/projection-runs/claro_retrospettivo_no_casting/CT/0000{idx_exp}-stylegan2-w_lips_{w_lips}-w_pix_{w_pix}-network-snapshot-004400.pkl/"
+        target_fname="/home/lorenzo/Gan-track/data/interim/claro_retrospettivo_no_casting/stylegan2-ada/100151470_103.tif"
 
         training_set_kwargs = {
             'modalities': ['CT'],

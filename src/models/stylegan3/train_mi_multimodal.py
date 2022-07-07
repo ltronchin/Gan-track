@@ -85,7 +85,6 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
     print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
     # CUSTOMIZING START
-    print(f'Augmentation type:   {c.aug}')
     print(f'ADA adjustment speed:{c.ada_kimg}')
     # CUSTOMIZING END
     print()
@@ -137,6 +136,14 @@ def parse_comma_separated_list(s):
         return []
     return s.split(',')
 
+# CUSTOMIZING START
+def parse_separated_list_comma(l):
+    if isinstance(l, str):
+        return l
+    if len(l) == 0:
+        return ''
+    return ','.join(l)
+# CUSTOMIZING STOP
 #----------------------------------------------------------------------------
 
 @click.command()
@@ -162,7 +169,7 @@ def parse_comma_separated_list(s):
 @click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
 # CUSTOMIZING START-ADDING NEW PARAMETERs
 @click.option('--ada_kimg',     help='ADA adjustment speed',                                    type=click.IntRange(min=1), default=500, show_default=True)
-#@click.option('--aug_opts',    help='Augmentation transformation option to enable'             type=parse_comma_separated_list, default='', show_default=True) # todo options here
+@click.option('--aug_opts',     help='Augmentation transformation option to enable',            type=parse_comma_separated_list, default='xflip,rotate90,xint,scale,rotate,aniso,xfrac', show_default=True)
 # CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
@@ -208,8 +215,7 @@ def main(**kwargs):
     cache_dir = dnnlib.util.take_cache_dir_path()
     cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
     if os.path.isdir(cache_dir_metric):
-        #user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
-        user_input = 'N'
+        user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
         if user_input == 'Y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')
@@ -292,19 +298,13 @@ def main(**kwargs):
 
     # Augmentation.
     if opts.aug != 'noaug':
-        # CUSTOMIZING START -> deactivate some colour based augmentations --> brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0
-        len_modalities = len(c.training_set_kwargs.modalities)
-        if opts.dtype == 'uint8' and len_modalities == 1:
-            # todo create a dict where we have 1 for elements in the list and 0 in other cases
-            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1)
-        else:
-            c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0)
+        # CUSTOMIZING START -- added options to turn on some augmentation
+        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **{aug: 1 for aug in opts.aug_opts})
         if opts.aug == 'ada':
             c.ada_target = opts.target
-            c.ada_kimg = opts.ada_kimg
+            c.ada_kimg = opts.ada_kimg # added
         if opts.aug == 'fixed':
             c.augment_p = opts.p
-        c.aug = opts.aug
         # CUSTOMIZING END
 
     # Resume.
@@ -324,10 +324,17 @@ def main(**kwargs):
     # CUSTOMIZING START
     s_modalities = opts.modalities.replace(" ", "").split(",")
     s_modalities = ",".join(s_modalities)
+
+    if opts.aug != 'noaug':
+        s_aug_opts = parse_separated_list_comma(opts.aug_opts)
+    else:
+        s_aug_opts = 'noaug'
+        c.ada_kimg = opts.ada_kimg = 'noaug'
+
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{c.aug}-ada_kimg_{c.ada_kimg}"
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-ada_kimg_{c.ada_kimg}-aug_opts_{s_aug_opts}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
     # CUSTOMIZING END

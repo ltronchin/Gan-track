@@ -1,23 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="GAUSS">
+  <component name="PublishConfigData" autoUpload="Always" serverName="LAPLACE">
     <serverData>
       <paths name="GAUSS">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/lorenzo/Gan-tracker" local="$PROJECT_DIR$" />
+            <mapping deploy="/home/lorenzo/Gan-track" local="$PROJECT_DIR$/../Gan-track" />
           </mappings>
           <excludedPaths>
-            <excludedPath local="true" path="$PROJECT_DIR$/data/" />
-            <excludedPath local="true" path="$PROJECT_DIR$/log_run" />
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/data/" />
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/log_runs/" />
           </excludedPaths>
         </serverdata>
       </paths>
       <paths name="LAPLACE">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/lorenzo/Gan tracker" local="$PROJECT_DIR$" />
+            <mapping deploy="/home/lorenzo/Gan-track" local="$PROJECT_DIR$/../Gan-track" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/data/" />
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/log_runs/" />
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/reports/" />
+            <excludedPath local="true" path="$PROJECT_DIR$/../Gan-track/models/" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>

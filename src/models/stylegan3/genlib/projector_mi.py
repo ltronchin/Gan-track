@@ -167,12 +167,12 @@ def run_projection(
 
     \b
     python3 ./genlib/projector.py
-      --network="/home/lorenzo/Gan tracker/models/claro_retrospettivo/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl"
-      --target="/home/lorenzo/Gan tracker/data/interim/claro_retrospettivo/stylegan2-ada/9309_98.png"
+      --network="/home/lorenzo/Gan-track/models/claro_retrospettivo/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000.pkl"
+      --target="/home/lorenzo/Gan-track/data/interim/claro_retrospettivo/stylegan2-ada/9309_98.png"
         --num-steps=1000
         --seed=303
         --save-video=True
-        --outdir="/home/lorenzo/Gan tracker/reports/claro_retrospettivo/projector/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000/"
+        --outdir="/home/lorenzo/Gan-track/reports/claro_retrospettivo/projector/00000-stylegan2--gpus2-batch32-gamma0.4096/network-snapshot-005000/"
     """
     np.random.seed(seed) # set seed
     torch.manual_seed(seed)

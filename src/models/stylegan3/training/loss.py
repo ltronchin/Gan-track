@@ -15,13 +15,11 @@ from torch_utils.ops import conv2d_gradfix
 from torch_utils.ops import upfirdn2d
 
 import matplotlib.pyplot as plt
-import os
 
 #----------------------------------------------------------------------------
 # CUSTOMIZATION START
-def visualize_batch(run_dir, cur_nimg, img_tensor, batch_size, n_img=16, n_img_row=4):
-
-    # Function to concatenate images along xaxis (row).
+def visualize_batch(img_tensor, batch_size, n_img=16, n_img_row=4):
+    # Function to concatenate images along xaxis (rows).
     def hconcat(x, n):
         xrow = []
         for batch_idx in range(n):
@@ -31,7 +29,7 @@ def visualize_batch(run_dir, cur_nimg, img_tensor, batch_size, n_img=16, n_img_r
         return np.concatenate(xrow, axis=1)  # H x W x W*n_img
 
     # Sanity check of the input.
-    n_modes =img_tensor.shape[1]
+    n_modes = img_tensor.shape[1]
     n_batch = n_img // n_modes  # if we want 16 images we sample 8 batch if we have two modes
     assert n_batch <= batch_size
     assert len(img_tensor.shape) == 4  # B x C x H x W
@@ -44,13 +42,8 @@ def visualize_batch(run_dir, cur_nimg, img_tensor, batch_size, n_img=16, n_img_r
 
     # Plot figure.
     plt.imshow(xrowcol, cmap='gray', vmin=0.0, vmax=255.0, aspect='equal')
-    plt.gca().set_axis_off()
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.margins(0, 0)
-    plt.gca().xaxis.set_major_locator(plt.NullLocator())
-    plt.gca().yaxis.set_major_locator(plt.NullLocator())
-    plt.savefig(os.path.join(run_dir, f'aug_sanity_check-cur_nimg_{cur_nimg}.png'), format='png')
-    #plt.show()
+    plt.axis('off')
+    plt.show()
 
 # CUSTOMIZATION END
 #----------------------------------------------------------------------------
@@ -79,8 +72,8 @@ class StyleGAN2Loss(Loss):
         self.blur_fade_kimg     = blur_fade_kimg
 
         # CUSTOMIZATION START
-        self.run_dir = run_dir,
-        self.batch_size = batch_size,
+        self.run_dir = run_dir
+        self.batch_size = batch_size
         # CUSTOMIZATION END
 
     def run_G(self, z, c, update_emas=False):
@@ -93,8 +86,8 @@ class StyleGAN2Loss(Loss):
         img = self.G.synthesis(ws, update_emas=update_emas)
         return img, ws
 
-    # CUSTOMIZATION START
-    def run_D(self, img, c, blur_sigma=0, update_emas=False, is_printing=False, cur_nimg=0):
+    # CUSTOMIZATION START - added option is_printing
+    def run_D(self, img, c, blur_sigma=0, update_emas=False, is_printing=False):
     # CUSTOMIZATION STOP
         blur_size = np.floor(blur_sigma * 3)
         if blur_size > 0:
@@ -105,7 +98,7 @@ class StyleGAN2Loss(Loss):
             img = self.augment_pipe(img) # HERE WE CALL THE AUGMENTATION PIPELINE
         # CUSTOMIZATION START
         if is_printing:
-            visualize_batch(self.run_dir, cur_nimg, (img + 1) * (255 / 2), batch_size=self.batch_size, n_img=16, n_img_row=4)
+            visualize_batch(img_tensor = (img + 1) * (255 / 2), batch_size=self.batch_size, n_img=16, n_img_row=4) # if n_img=16 and we have 2 modes we'll have 8 images per mode
         # CUSTOMIZATION STOP
         logits = self.D(img, c, update_emas=update_emas) # image feeded to the Discriminator
         return logits
@@ -167,7 +160,7 @@ class StyleGAN2Loss(Loss):
             with torch.autograd.profiler.record_function(name + '_forward'):
                 real_img_tmp = real_img.detach().requires_grad_(phase in ['Dreg', 'Dboth'])
                 # CUSTOMIZATION START
-                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, is_printing=True) # HERE is_printing to True to see the Real Augmented images
+                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, is_printing=False) # (ONLY FOR DEBUG) HERE is_printing to True to see the Real Augmented images
                 # CUSTOMIZATION STOP
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())

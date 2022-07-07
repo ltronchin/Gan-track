@@ -31,37 +31,22 @@ from metrics import metric_main_mi_multimodal
 
 # CUSTOMIZING START
 #----------------------------------------------------------------------------
-def convert_to_grayscale(images, low=None, hi=None): # rescale the image into the range 0 255 and cope with the presence of a number of channel different from [1 3]
+def convert_to_grayscale(images, hi=None, low=None): # rescale the image into the range 0 255 and cope with the presence of a number of channel different from [1 3]
     temp = np.zeros((len(images) * images[0].shape[0], 1, images[0].shape[1], images[0].shape[2]))
     c = 0
     for i in range(len(images)):
         x = images[i]
         for j in range(x.shape[0]):
             y = x[j, :, :]
-            if hi is None:
-                hi = y.max()
-            if low is None:
-                low = y.min()
-
+            # if hi is None:
+            #     hi = y.max()
+            # if low is None:
+            #     low = y.min()
 
             y = (y - low) * (255 / (hi - low))
             temp[c, 0, :, :] = y
             c += 1
     return temp
-
-def visualize_batch(batch_tensor):
-    import matplotlib.pyplot as plt
-
-    x = []
-    for batch_idx in range(2): # range(batch_tensor.shape[0]):
-        img = batch_tensor[batch_idx].detach().cpu().numpy() # 2 x 256 x 256
-        for mode_idx in range(img.shape[0]):
-            x.append(img[mode_idx])
-
-    x = np.concatenate(x, axis=1)
-
-    plt.imshow(x, cmap='gray', vmin=0.0, vmax=255.0)
-    plt.show()
 
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
@@ -245,7 +230,9 @@ def training_loop(
     # Setup training phases.
     if rank == 0:
         print('Setting up training phases...')
-    loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, **loss_kwargs) # subclass of training.loss.Loss
+    # CUSTOMIZATION START -- added parameters run_dir, batch_size
+    loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, run_dir=run_dir, batch_size=batch_size, **loss_kwargs) # subclass of training.loss.Loss
+    # CUSTOMIZATION END
     phases = []
     for name, module, opt_kwargs, reg_interval in [('G', G, G_opt_kwargs, G_reg_interval), ('D', D, D_opt_kwargs, D_reg_interval)]:
         if reg_interval is None:
@@ -318,7 +305,7 @@ def training_loop(
             phase_real_img, phase_real_c = next(training_set_iterator)
             # CUSTOMIZATION START
             #if random.uniform(0, 1) > 0.9:
-            # visualize_batch(phase_real_img)
+            # visualize_batch(phase_real_img, batch_size=batch_size,  n_img=16)
             # CUSTOMIZATION END
             phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
@@ -339,7 +326,7 @@ def training_loop(
             phase.opt.zero_grad(set_to_none=True)
             phase.module.requires_grad_(True)
             for real_img, real_c, gen_z, gen_c in zip(phase_real_img, phase_real_c, phase_gen_z, phase_gen_c):
-                loss.accumulate_gradients(phase=phase.name, real_img=real_img, real_c=real_c, gen_z=gen_z, gen_c=gen_c, gain=phase.interval, cur_nimg=cur_nimg)
+                loss.accumulate_gradients(phase=phase.name, real_img=real_img, real_c=real_c, gen_z=gen_z, gen_c=gen_c, gain=phase.interval, cur_nimg=cur_nimg) # call to compute loss
             phase.module.requires_grad_(False)
 
             # Update weights.
@@ -375,7 +362,7 @@ def training_loop(
         cur_nimg += batch_size
         batch_idx += 1
 
-        # Execute ADA heuristic. # todo check here for ada adaptation!
+        # Execute ADA heuristic.
         if (ada_stats is not None) and (batch_idx % ada_interval == 0):
             ada_stats.update()
             adjust = np.sign(ada_stats['Loss/signs/real'] - ada_target) * (batch_size * ada_interval) / (ada_kimg * 1000)

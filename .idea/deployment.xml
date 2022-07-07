@@ -1,8 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="lorenzo@130.239.99.38:1023 password">
+  <component name="PublishConfigData" autoUpload="Always" serverName="GAUSS">
     <serverData>
-      <paths name="lorenzo@130.239.99.38:1023 password">
+      <paths name="GAUSS">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/lorenzo/Gan-tracker" local="$PROJECT_DIR$" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/data/" />
+            <excludedPath local="true" path="$PROJECT_DIR$/log_run" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+      <paths name="LAPLACE">
         <serverdata>
           <mappings>
             <mapping deploy="/home/lorenzo/Gan tracker" local="$PROJECT_DIR$" />

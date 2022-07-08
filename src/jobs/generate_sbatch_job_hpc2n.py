@@ -5,149 +5,124 @@ def replace(filedata, string, bystring):
     filedata = filedata.replace(string, bystring)
     return filedata
 
-
+"""
 def prepare_dataset(
     filedata, dataset, num_patients, model, aug, mirror, in_modal, out_modal
 ):
-    if len(in_modal) == 0:
-        in_str = ""
-    elif len(in_modal) == 1:
-        in_str = in_modal[0]
-    else:
-        in_str = ",".join(in_modal)
+"""
+def prepare_dataset(
+       filedata,
+       template_args,
+):
 
-    assert len(out_modal) >= 1, "out_modal is empty"
-    if len(out_modal) == 1:
-        out_str = out_modal[0]
-    else:
-        out_str = ",".join(out_modal)
+    assert len(template_args) >= 1, "modalities is empty"
 
-    filename = f"scripts/jobs/{dataset:s}_{model:s}_{num_patients:d}_in-{in_str:s}_out-{out_str:s}.sh"
+    filename = f"./src/bash/{template_args.dataset:s}-num_{template_args.num_patients:d}-modalities_{template_args.modalities:s}-aug_{template_args.aug:s}-aug_opts_{template_args.aug_opts:s}.sh"
 
-    # Replace the target string
-    filedata = replace(filedata, "<dataset>", dataset)
-    filedata = replace(filedata, "<num_patients>", str(num_patients))
-    filedata = replace(filedata, "<model>", model)
-    filedata = replace(filedata, "<aug>", aug)
-    filedata = replace(filedata, "<mirror>", str(mirror))
-    if in_str == "":
-        filedata = replace(filedata, "--in_modal=<in_modal> ", "")
-    else:
-        filedata = replace(filedata, "<in_modal>", in_str)
-    filedata = replace(filedata, "<out_modal>", out_str)
+    for key in list(template_args.keys()):
+        arg = str(template_args[key])
+        print(f"Replace <{key}> with {arg}")
+        filedata = replace(filedata, f"<{str(key)}>", arg)
 
     # Write the file out again
     with open(filename, "w") as file:
         file.write(filedata)
-
     print(f"sbatch {filename}")
 
 
 def main():
     # Read in the file
-    with open(f"scripts/jobs/template.sh", "r") as file:
-        filedata = file.read()
+    with open(f"./configs/bash/template_stylegan3.sh", "r") as file:
+        template = file.read()
+
+    # Parameter to fix for template
+    """
+        --outdir=<outdir>
+        --data=<source_path>/<dataset>/<dataset>-num-<num_patients>_train-0.70_val-0.20_test-0.10.zip
+        --dataset=<dataset>
+        --split=<split>
+        --modalities=<modalities>
+        --dtype=<dtype>
+        --cfg=<model>
+        --batch=<batch>
+        --map-depth=<map_depth>
+        --glr=<glr>
+        --dlr=<dlr>
+        --cbase=<cbase>
+        --kimg=<kimg>
+        --gpus=<n_gpus>
+        --gamma=<gamma>
+        --snap=<snap>
+        --mirror=<mirror>
+        --aug=<aug>
+        --ada_kimg=<ada_kimg>
+        --aug_opts=<aug_opts>
+        --target=<target_p_aug>
+        --metrics=<metrics>
+        --metrics_cache=<metrics_cache>"
+    """
+
+    pixel_blitting = 'xflip,rotate90,xint' # todo exlude rotate90?
+    general_geometric = 'scale,rotate,aniso,xfrac'
+    color = 'brightness,contrast'
+    image_space_filtering = ''
+    image_space_corruptions = ''
+
+    run_list = [
+        'noaug', # no aug case
+        pixel_blitting,
+        pixel_blitting + ',' + general_geometric,
+        pixel_blitting + ',' + color,
+        general_geometric,
+        general_geometric + ',' + color,
+        general_geometric + ',' + color,
+        pixel_blitting + ',' + general_geometric + ',' + color,
+    ]
 
     c = dnnlib.EasyDict()  # Main config dict.
-    c.filedata = filedata
+    for opts in run_list:
 
-    # Prepare the dataset
-    for model in ["stylegan2"]:
-        for dataset in ["brats20", "ibsr18", "heart", "kits19", "pros", "spleen"]:
-        # for dataset in ["spleen"]:
-            if dataset == "brats20":
-                list_num_patients = [20, 50, 100, 200, 369]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["t1", "t2", "flair", "t1ce", "truth_label"]],
-                ]
-                mirror = 1
-            elif dataset == "ibsr18":
-                list_num_patients = [18]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["t1", "truth_label"]],
-                ]
-                mirror = 1
-            elif dataset == "heart":
-                list_num_patients = [20]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["img", "truth_label"]],
-                ]
-                mirror = 0
-            elif dataset == "kits19":
-                list_num_patients = [20, 50, 100, 203]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["imaging", "truth_label"]],
-                ]
-                mirror = 0
-            elif dataset == "pros":
-                list_num_patients = [20, 50, 100, 200, 500]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["ct", "truth_label"]],
-                ]
-                mirror = 1
-            elif dataset == "spleen":
-                list_num_patients = [20, 41]
-                list_modals = [
-                    [[""], [""]],
-                    [["truth_label"], ["img", "truth_label"]],
-                ]
-                mirror = 0
-            for num_patients in list_num_patients:
-                for in_modal, out_modal in zip(list_modals[0], list_modals[1]):
-                    for aug in ["ada"]:
-                        c.model = model
-                        c.dataset = dataset
-                        c.num_patients = num_patients
-                        c.in_modal = in_modal
-                        c.out_modal = out_modal
-                        c.aug = aug
-                        c.mirror = mirror
-                        prepare_dataset(**c)
+        # Dataset and data folder options.
+        c.outdir                = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/reports'
+        c.source_path           = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/data/interim'
+        c.dataset               = 'Pelvis_2.1'
+        c.split                 = 'train'
+        c.num_patients          =  375
+        c.modalities            = 'MR_nonrigid_CT,MR_MR_T2'
+        c.dtype                 = 'float32'
 
-    for model in ["condstylegan2", "condstylegan2-v"]:
-        for dataset in ["brats20", "ibsr18", "heart", "kits19", "pros", "spleen"]:
-        # for dataset in ["kits19"]:
-            if dataset == "brats20":
-                list_num_patients = [20, 50, 100, 200, 369]
-                list_modals = [["truth_label"]], [["t1", "t2", "flair", "t1ce"]]
-                mirror = 0
-            elif dataset == "ibsr18":
-                list_num_patients = [18]
-                list_modals = [["truth_label"]], [["t1"]]
-                mirror = 0
-            elif dataset == "heart":
-                list_num_patients = [20]
-                list_modals = [["truth_label"]], [["img"]]
-                mirror = 0
-            elif dataset == "kits19":
-                list_num_patients = [20, 50, 100, 203]
-                list_modals = [["truth_label"]], [["imaging"]]
-                mirror = 0
-            elif dataset == "pros":
-                list_num_patients = [20, 50, 100, 200, 500]
-                list_modals = [["truth_label"]], [["ct"]]
-                mirror = 0
-            elif dataset == "spleen":
-                list_num_patients = [20, 41]
-                list_modals = [["truth_label"]], [["img"]]
-                mirror = 0
-            for num_patients in list_num_patients:
-                for in_modal, out_modal in zip(list_modals[0], list_modals[1]):
-                    for aug in ["simple"]:
-                        c.model = model
-                        c.dataset = dataset
-                        c.num_patients = num_patients
-                        c.in_modal = in_modal
-                        c.out_modal = out_modal
-                        c.aug = aug
-                        c.mirror = mirror
-                        prepare_dataset(**c)
+        # Model options.
+        c.model                 = 'stylegan2'
+        c.batch                 = 16
+        c.map_depth             = 2
+        c.glr                   = 0.0025
+        c.dlr                   = 0.0025
+        c.cbase                 = 16384
 
+        # Training options.
+        c.kimg                  = 10000
+        c.gpus                  = 1
+        c.gamma                 = 0.8192
+        c.snap                  = 10
+        c.mirror                = 1
+
+        # Augmentation options.
+        if opts == 'noaug':
+            c.aug                   = 'noaug'
+            c.ada_kimg              = 500
+            c.aug_opts              = 'noaug'
+            c.target                = 0
+        else:
+            c.aug                   = 'ada'
+            c.ada_kimg              = 500
+            c.aug_opts              = opts
+            c.target                = 0.6
+
+        # Metrics options.
+        c.metrics                   = 'fid50k_full'
+        c.metrics_cache             = True
+
+        prepare_dataset(filedata=template, template_args=c)
 
 if __name__ == "__main__":
     main()

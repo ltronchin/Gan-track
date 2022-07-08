@@ -75,7 +75,7 @@ def nested_dict():
 def notification_ifttt(info):
     private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
     url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
-    requests.post(url, data={'value1': "Update --- "+ str(info)})
+    requests.post(url, data={'Info': str(info)})
 
 def define_source_path(path_dir, dataset, source_id_run=None, source_run_module=None):
     print('Define a source path')

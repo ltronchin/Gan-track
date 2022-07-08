@@ -27,7 +27,6 @@ import random
 import legacy
 # CUSTOMIZING START
 from metrics import metric_main_mi_multimodal
-import requests
 # CUSTOMIZING END
 
 # CUSTOMIZING START
@@ -119,15 +118,12 @@ def save_image_grid(img, fname, grid_size):
         PIL.Image.fromarray(img[:, :, 0], 'L').save(fname)
     if C == 3:
         PIL.Image.fromarray(img, 'RGB').save(fname)
-# CUSTOMIZING END
-#----------------------------------------------------------------------------
 
-#----------------------------------------------------------------------------
-# CUSTOMIZING START
+import requests
 def notification_ifttt(info):
     private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
     url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
-    requests.post(url, data={'value1': "Update --- "+ str(info)})
+    requests.post(url, json={'Info': str(info)})
 
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
@@ -243,7 +239,7 @@ def training_loop(
     # CUSTOMIZATION END
 
     # CUSTOMIZATION START -- added trigger for training start
-    notification_ifttt('Stylegan-2 ada Training Start!')
+    notification_ifttt(f'Stylegan START! Check it at: {run_dir}')
     # CUSTOMIZATION END
 
     phases = []
@@ -506,7 +502,7 @@ def training_loop(
         print()
         print('Exiting...')
         # CUSTOMIZATION START -- added trigger for training stop
-        notification_ifttt('Stylegan-2 ada Training Stop!')
+        notification_ifttt(f'Stylegan STOP! Check it at: {run_dir}')
         # CUSTOMIZATION END
 
 

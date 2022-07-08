@@ -22,7 +22,13 @@ from training import training_loop_mi_multimodal
 from metrics import metric_main_mi_multimodal
 from torch_utils import training_stats
 from torch_utils import custom_ops
+import requests
 
+#----------------------------------------------------------------------------
+def notification_ifttt(info):
+    private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
+    url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
+    requests.post(url, json={'Info': str(info)})
 #----------------------------------------------------------------------------
 
 def subprocess_fn(rank, c, temp_dir):
@@ -215,7 +221,8 @@ def main(**kwargs):
     cache_dir = dnnlib.util.take_cache_dir_path()
     cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
     if os.path.isdir(cache_dir_metric):
-        user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
+        #user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
+        user_input = 'N'
         if user_input == 'Y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')
@@ -352,7 +359,24 @@ if __name__ == "__main__":
     my_env = os.environ.copy()
     my_env["PATH"] = "/home/lorenzo/miniconda3/envs/stylegan3/bin:" + my_env["PATH"]
     os.environ.update(my_env)
-    # CUSTOMIZING END
-    main() # pylint: disable=no-value-for-parameter
+
+    try:
+        main() # pylint: disable=no-value-for-parameter
+    except OSError as err:
+         fstr = "OS error: {0}".format(err)
+         print(fstr)
+         notification_ifttt(fstr)
+    except ImportError as err:
+         fstr = f"Import error: {err}"
+         print(fstr)
+         notification_ifttt(fstr)
+    except MemoryError as err:
+         fstr = f"Memory error: {err}"
+         print(fstr)
+         notification_ifttt(fstr)
+    except BaseException as err: # to consider exception not listed above. Use it with
+        fstr = f"Unexpected {err=}, {type(err)=}"
+        notification_ifttt(fstr)
+        raise # to raise the error
 
 #----------------------------------------------------------------------------

@@ -160,7 +160,7 @@ class StyleGAN2Loss(Loss):
             with torch.autograd.profiler.record_function(name + '_forward'):
                 real_img_tmp = real_img.detach().requires_grad_(phase in ['Dreg', 'Dboth'])
                 # CUSTOMIZATION START
-                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, is_printing=False) # (ONLY FOR DEBUG) HERE is_printing to True to see the Real Augmented images
+                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, is_printing=True) # (ONLY FOR DEBUG) HERE is_printing to True to see the Real Augmented images
                 # CUSTOMIZATION STOP
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())

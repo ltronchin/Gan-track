@@ -1,4 +1,5 @@
 import dnnlib
+import itertools
 
 
 def replace(filedata, string, bystring):
@@ -62,67 +63,88 @@ def main():
         --metrics_cache=<metrics_cache>"
     """
 
-    pixel_blitting = 'xflip,rotate90,xint' # todo exlude rotate90?
-    general_geometric = 'scale,rotate,aniso,xfrac'
+    # Transformations options. (rotate90 exluded)
+    pixel_blitting = 'xflip,xint' # 'xflip,rotate90,xint'
+    general_geometric = 'scale,rotate,aniso,xfrac' # rotate range limited to [-2 2] degree
     color = 'brightness,contrast'
     image_space_filtering = ''
     image_space_corruptions = ''
 
-    run_list = [
-        'noaug', # no aug case
-        pixel_blitting,
-        pixel_blitting + ',' + general_geometric,
-        pixel_blitting + ',' + color,
-        general_geometric,
-        general_geometric + ',' + color,
-        general_geometric + ',' + color,
-        pixel_blitting + ',' + general_geometric + ',' + color,
-    ]
+    run_dict = {
+        'runset_1': {
+            'aug_opts': [
+                'noaug',  # no aug case
+                pixel_blitting,
+                pixel_blitting + ',' + general_geometric,
+                pixel_blitting + ',' + color,
+                general_geometric,
+                general_geometric + ',' + color,
+                general_geometric + ',' + color,
+                pixel_blitting + ',' + general_geometric + ',' + color
+            ],
+            'modalities': [
+                'MR_nonrigid_CT,MR_MR_T2'
+            ]
+        },
+        'runset_2': {
+            'aug_opts': [
+                'noaug',
+            ],
+            'modalities': [
+                'MR_nonrigid_CT',
+                'MR_MR_T2'
+            ]
+        }
+    }
 
     c = dnnlib.EasyDict()  # Main config dict.
-    for opts in run_list:
+    for run_key in list(run_dict.keys()):
+        for opts in itertools.product(*run_dict[run_key].values()):
+            opt_aug = opts[0]
+            opt_modalities = opts[1]
+            print(f'Opt aug: {opt_aug}, opt modalities: {opt_modalities}')
 
-        # Dataset and data folder options.
-        c.outdir                = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/reports'
-        c.source_path           = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/data/interim'
-        c.dataset               = 'Pelvis_2.1'
-        c.split                 = 'train'
-        c.num_patients          =  375
-        c.modalities            = 'MR_nonrigid_CT,MR_MR_T2'
-        c.dtype                 = 'float32'
+            # Dataset and data folder options.
+            c.outdir                = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/reports'
+            c.source_path           = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/data/interim'
+            c.dataset               = 'Pelvis_2.1'
+            c.split                 = 'train'
+            c.num_patients          =  375
+            c.modalities            =  opt_modalities #'MR_nonrigid_CT,MR_MR_T2'
+            c.dtype                 = 'float32'
 
-        # Model options.
-        c.model                 = 'stylegan2'
-        c.batch                 = 16
-        c.map_depth             = 2
-        c.glr                   = 0.0025
-        c.dlr                   = 0.0025
-        c.cbase                 = 16384
+            # Model options.
+            c.model                 = 'stylegan2'
+            c.batch                 = 16
+            c.map_depth             = 2
+            c.glr                   = 0.0025
+            c.dlr                   = 0.0025
+            c.cbase                 = 16384
 
-        # Training options.
-        c.kimg                  = 10000
-        c.gpus                  = 1
-        c.gamma                 = 0.8192
-        c.snap                  = 10
-        c.mirror                = 1
+            # Training options.
+            c.kimg                  = 10000
+            c.gpus                  = 1
+            c.gamma                 = 0.8192
+            c.snap                  = 10
+            c.mirror                = 1
 
-        # Augmentation options.
-        if opts == 'noaug':
-            c.aug                   = 'noaug'
-            c.ada_kimg              = 500
-            c.aug_opts              = 'noaug'
-            c.target                = 0
-        else:
-            c.aug                   = 'ada'
-            c.ada_kimg              = 500
-            c.aug_opts              = opts
-            c.target                = 0.6
+            # Augmentation options.
+            if opt_aug == 'noaug':
+                c.aug                   = 'noaug'
+                c.ada_kimg              = 500
+                c.aug_opts              = 'noaug'
+                c.target                = 0
+            else:
+                c.aug                   = 'ada'
+                c.ada_kimg              = 500
+                c.aug_opts              = opt_aug
+                c.target                = 0.6
 
-        # Metrics options.
-        c.metrics                   = 'fid50k_full'
-        c.metrics_cache             = True
+            # Metrics options.
+            c.metrics                   = 'fid50k_full'
+            c.metrics_cache             = True
 
-        prepare_dataset(filedata=template, template_args=c)
+            prepare_dataset(filedata=template, template_args=c)
 
 if __name__ == "__main__":
     main()

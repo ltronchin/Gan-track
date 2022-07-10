@@ -146,5 +146,8 @@ def main():
 
             prepare_dataset(filedata=template, template_args=c)
 
+    print("\n")
+    print("May be the force with you.")
+
 if __name__ == "__main__":
     main()

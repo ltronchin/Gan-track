@@ -17,7 +17,7 @@ export PYTHONPATH=$PYTHONPATH:/pfs/stor10/users/home/l/lotr0009/Public/stylegan3
 export PYTHONPATH=${PWD}:$PYTHONPATH
 echo "Load done"
 
-export command="python train_mi_multimodal.py --outdir=<outdir> --data=<source_path>/<dataset>/<dataset>-num-<num_patients>_train-0.70_val-0.20_test-0.10.zip --dataset=<dataset> --split=<split> --modalities=<modalities> --dtype=<dtype> --cfg=<model> --batch=<batch>  --map-depth=<map_depth> --glr=<glr> --dlr=<dlr> --cbase=<cbase> --kimg=<kimg> --gpus=<gpus> --gamma=<gamma> --snap=<snap> --mirror=<mirror>  --aug=<aug>  --ada_kimg=<ada_kimg> --aug_opts=<aug_opts> --target=<target> --metrics=<metrics> --metrics_cache=<metrics_cache>"
+export command="python train_mi_multimodal.py --outdir=/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/reports --data=/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/data/interim/Pelvis_2.1/Pelvis_2.1-num-375_train-0.70_val-0.20_test-0.10.zip --dataset=Pelvis_2.1 --split=train --modalities=MR_nonrigid_CT,MR_MR_T2 --dtype=float32 --cfg=stylegan2 --batch=16  --map-depth=2 --glr=0.0025 --dlr=0.0025 --cbase=16384 --kimg=10000 --gpus=1 --gamma=0.8192 --snap=10 --mirror=1  --aug=ada  --ada_kimg=500 --aug_opts=scale,rotate,aniso,xfrac,brightness,contrast --target=0.6 --metrics=fid50k_full --metrics_cache=True"
 
 echo "$command"
 srun $command

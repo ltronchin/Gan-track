@@ -223,8 +223,8 @@ def main(**kwargs):
     cache_dir = dnnlib.util.take_cache_dir_path()
     cache_dir_metric = os.path.join(cache_dir, 'gan-metrics')
     if os.path.isdir(cache_dir_metric):
-        user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
-        #user_input = 'N'
+        #user_input = input(f"Hi! 'gan-metrics' directory finded in {cache_dir_metric}. Do you want to remove it? \nY/N ")
+        user_input = 'N'
         if user_input == 'Y':
             shutil.rmtree(cache_dir_metric)
             print('Deleted.')

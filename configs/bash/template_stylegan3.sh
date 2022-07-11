@@ -17,7 +17,7 @@ export PYTHONPATH=$PYTHONPATH:/pfs/stor10/users/home/l/lotr0009/Public/stylegan3
 export PYTHONPATH=${PWD}:$PYTHONPATH
 echo "Load done"
 
-export command="python train_mi_multimodal.py --outdir=<outdir> --data=<source_path>/<dataset>/<dataset>-num-<num_patients>_train-0.70_val-0.20_test-0.10.zip --dataset=<dataset> --split=<split> --modalities=<modalities> --dtype=<dtype> --cfg=<model> --batch=<batch>  --map-depth=<map_depth> --glr=<glr> --dlr=<dlr> --cbase=<cbase> --kimg=<kimg> --gpus=<gpus> --workers=<workers> --gamma=<gamma> --snap=<snap> --mirror=<mirror>  --aug=<aug>  --ada_kimg=<ada_kimg> --aug_opts=<aug_opts> --target=<target> --metrics=<metrics> --metrics_cache=<metrics_cache>"
+export command="python train_mi_multimodal.py --outdir=<outdir> --data=<source_path>/<dataset>/<dataset>-num-<num_patients>_train-0.70_val-0.20_test-0.10.zip --dataset=<dataset> --split=<split> --modalities=<modalities> --dtype=<dtype> --cfg=<model> --batch=<batch>  --map-depth=<map_depth> --glr=<glr> --dlr=<dlr> --cbase=<cbase> --kimg=<kimg> --gpus=<gpus> --workers=<workers> --gamma=<gamma> --snap=<snap> --mirror=<mirror>  --aug=<aug>  --ada_kimg=<ada_kimg> --aug_opts=<aug_opts> --rotate_max=<rotate_max> --target=<target> --metrics=<metrics> --metrics_cache=<metrics_cache>"
 
 echo "$command"
 srun $command

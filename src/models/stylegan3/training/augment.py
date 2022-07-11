@@ -223,7 +223,7 @@ class AugmentPipe(torch.nn.Module):
             G_inv = G_inv @ translate2d_inv(torch.round(t[:,0] * width), torch.round(t[:,1] * height))
 
         # --------------------------------------------------------
-        # Select parameters for general geometric transformations. # todo limit the range of rotate to [-2 2] degree
+        # Select parameters for general geometric transformations.
         # --------------------------------------------------------
 
         # Apply isotropic scaling with probability (scale * strength).

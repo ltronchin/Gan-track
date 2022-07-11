@@ -27,6 +27,7 @@ import random
 import legacy
 # CUSTOMIZING START
 from metrics import metric_main_mi_multimodal
+from genlib.utils import util_general
 # CUSTOMIZING END
 
 # CUSTOMIZING START
@@ -118,12 +119,6 @@ def save_image_grid(img, fname, grid_size):
         PIL.Image.fromarray(img[:, :, 0], 'L').save(fname)
     if C == 3:
         PIL.Image.fromarray(img, 'RGB').save(fname)
-
-import requests
-def notification_ifttt(info):
-    private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
-    url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
-    requests.post(url, json={'Info': str(info)})
 
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
@@ -218,7 +213,9 @@ def training_loop(
     augment_pipe = None
     ada_stats = None
     if (augment_kwargs is not None) and (augment_p > 0 or ada_target is not None):
-        augment_pipe = dnnlib.util.construct_class_by_name(**augment_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
+        # CUSTOMIZATION START -- added parameter run_dir, batch_size
+        augment_pipe = dnnlib.util.construct_class_by_name(run_dir=run_dir, batch_size=batch_size, **augment_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
+        # CUSTOMIZATION END
         augment_pipe.p.copy_(torch.as_tensor(augment_p))
         if ada_target is not None:
             ada_stats = training_stats.Collector(regex='Loss/signs/real')
@@ -234,12 +231,10 @@ def training_loop(
     # Setup training phases.
     if rank == 0:
         print('Setting up training phases...')
-    # CUSTOMIZATION START -- added parameters run_dir, batch_size
-    loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, run_dir=run_dir, batch_size=batch_size, **loss_kwargs) # subclass of training.loss.Loss
-    # CUSTOMIZATION END
+    loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, **loss_kwargs) # subclass of training.loss.Loss
 
     # CUSTOMIZATION START -- added trigger for training start
-    notification_ifttt(f'Stylegan START! Check it at: {run_dir}')
+    util_general.notification_ifttt(f'Stylegan START! Check it at: {run_dir}')
     # CUSTOMIZATION END
 
     phases = []
@@ -502,7 +497,7 @@ def training_loop(
         print()
         print('Exiting...')
         # CUSTOMIZATION START -- added trigger for training stop
-        notification_ifttt(f'Stylegan STOP! Check it at: {run_dir}')
+        util_general.notification_ifttt(f'Stylegan STOP! Check it at: {run_dir}')
         # CUSTOMIZATION END
 
 

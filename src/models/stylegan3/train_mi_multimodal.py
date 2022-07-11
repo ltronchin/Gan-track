@@ -22,16 +22,7 @@ from training import training_loop_mi_multimodal
 from metrics import metric_main_mi_multimodal
 from torch_utils import training_stats
 from torch_utils import custom_ops
-import requests
-
-# CUSTOMIZATION START
-#----------------------------------------------------------------------------
-def notification_ifttt(info):
-    private_key = "isnY23hWBGyL-mF7F18BUAC-bGAN6dx1UAPoqnfntUa"
-    url = "https://maker.ifttt.com/trigger/Notification/json/with/key/" + private_key
-    requests.post(url, json={'Info': str(info)})
-#----------------------------------------------------------------------------
-# CUSTOMIZATION END
+from genlib.utils import util_general
 
 def subprocess_fn(rank, c, temp_dir):
     dnnlib.util.Logger(file_name=os.path.join(c.run_dir, 'log.txt'), file_mode='a', should_flush=True)
@@ -93,7 +84,7 @@ def launch_training(c, desc, outdir, dry_run):
     print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
     print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
     # CUSTOMIZING START
-    print(f'ADA adjustment speed:{c.ada_kimg}')
+    #print(f'ADA adjustment speed:{c.ada_kimg}')
     # CUSTOMIZING END
     print()
 
@@ -177,7 +168,8 @@ def parse_separated_list_comma(l):
 @click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
 # CUSTOMIZING START-ADDING NEW PARAMETERs
 @click.option('--ada_kimg',     help='ADA adjustment speed',                                    type=click.IntRange(min=1), default=500, show_default=True)
-@click.option('--aug_opts',     help='Augmentation transformation option to enable',            type=parse_comma_separated_list, default='xflip,rotate90,xint,scale,rotate,aniso,xfrac', show_default=True)
+@click.option('--aug_opts',     help='Augmentation transformation option to enable',            type=parse_comma_separated_list, default='xflip,xint,scale,rotate,aniso,xfrac', show_default=True)
+@click.option('--rotate_max',   help='Max rotation allowed in degree',                          type=click.IntRange(min=0, max=360), default=360, show_default=True)
 # CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
@@ -308,10 +300,11 @@ def main(**kwargs):
     # Augmentation.
     if opts.aug != 'noaug':
         # CUSTOMIZING START -- added options to turn on some augmentation
-        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment.AugmentPipe', **{aug: 1 for aug in opts.aug_opts})
+        c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment_mi.AugmentPipe', **{aug: 1 for aug in opts.aug_opts})
+        c.augment_kwargs.rotate_max = opts.rotate_max / 360 # the AugmentPipe accepts float rotation maximum values from 0 (rotation disabled) to 1 (full circle)
         if opts.aug == 'ada':
             c.ada_target = opts.target
-            c.ada_kimg = opts.ada_kimg # added
+            #c.ada_kimg = opts.ada_kimg # added
         if opts.aug == 'fixed':
             c.augment_p = opts.p
         # CUSTOMIZING END
@@ -338,12 +331,13 @@ def main(**kwargs):
         s_aug_opts = parse_separated_list_comma(opts.aug_opts)
     else:
         s_aug_opts = 'noaug'
-        c.ada_kimg = opts.ada_kimg = 'noaug'
+        #c.ada_kimg = opts.ada_kimg = 'noaug'
 
     # Update output directory.
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
-    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-ada_kimg_{c.ada_kimg}-aug_opts_{s_aug_opts}"
+    #desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-ada_kimg_{c.ada_kimg}-aug_opts_{s_aug_opts}"
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-aug_opts_{s_aug_opts}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
     # CUSTOMIZING END
@@ -367,18 +361,18 @@ if __name__ == "__main__":
     except OSError as err:
          fstr = "OS error: {0}".format(err)
          print(fstr)
-         notification_ifttt(fstr)
+         util_general.notification_ifttt(fstr)
     except ImportError as err:
          fstr = f"Import error: {err}"
          print(fstr)
-         notification_ifttt(fstr)
+         util_general.notification_ifttt(fstr)
     except MemoryError as err:
          fstr = f"Memory error: {err}"
          print(fstr)
-         notification_ifttt(fstr)
+         util_general.notification_ifttt(fstr)
     except BaseException as err: # to consider exception not listed above. Use it with
         fstr = f"Unexpected {err=}, {type(err)=}"
-        notification_ifttt(fstr)
+        util_general.notification_ifttt(fstr)
         raise # to raise the error
     # CUSTOMIZING END
 

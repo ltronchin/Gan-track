@@ -20,6 +20,10 @@ from torch_utils.ops import upfirdn2d
 from torch_utils.ops import grid_sample_gradfix
 from torch_utils.ops import conv2d_gradfix
 
+import matplotlib.pyplot as plt
+import os
+from genlib.utils import util_general
+
 #----------------------------------------------------------------------------
 # Coefficients of various wavelet decomposition low-pass filters.
 
@@ -120,18 +124,20 @@ def rotate2d_inv(theta, **kwargs):
 
 @persistence.persistent_class
 class AugmentPipe(torch.nn.Module):
-    def __init__(self,
+    # CUSTOMIZATION START -- added parameter run_dir, batch_size
+    def __init__(self, run_dir, batch_size,
         xflip=0, rotate90=0, xint=0, xint_max=0.125,
         scale=0, rotate=0, aniso=0, xfrac=0, scale_std=0.2, rotate_max=1, aniso_std=0.2, xfrac_std=0.125,
         brightness=0, contrast=0, lumaflip=0, hue=0, saturation=0, brightness_std=0.2, contrast_std=0.5, hue_max=1, saturation_std=1,
         imgfilter=0, imgfilter_bands=[1,1,1,1], imgfilter_std=1,
         noise=0, cutout=0, noise_std=0.1, cutout_size=0.5,
     ):
+    # CUSTOMIZATION END -- added parameter run_dir
         super().__init__()
         self.register_buffer('p', torch.ones([]))       # Overall multiplier for augmentation probability.
 
         # Pixel blitting.
-        self.xflip            = float(xflip)            # Probability multiplier for x-flip.
+        self.xflip             = float(xflip)              # Probability multiplier for x-flip.
         self.rotate90         = float(rotate90)         # Probability multiplier for 90 degree rotations.
         self.xint             = float(xint)             # Probability multiplier for integer translation.
         self.xint_max         = float(xint_max)         # Range of integer translation, relative to image dimensions.
@@ -149,7 +155,7 @@ class AugmentPipe(torch.nn.Module):
         # Color transformations.
         self.brightness       = float(brightness)       # Probability multiplier for brightness.
         self.contrast         = float(contrast)         # Probability multiplier for contrast.
-        self.lumaflip         = float(lumaflip)         # Probability multiplier for luma flip.
+        self.lumaflip          = float(lumaflip)          # Probability multiplier for luma flip.
         self.hue              = float(hue)              # Probability multiplier for hue rotation.
         self.saturation       = float(saturation)       # Probability multiplier for saturation.
         self.brightness_std   = float(brightness_std)   # Standard deviation of brightness.
@@ -168,6 +174,11 @@ class AugmentPipe(torch.nn.Module):
         self.noise_std        = float(noise_std)        # Standard deviation of additive RGB noise.
         self.cutout_size      = float(cutout_size)      # Size of the cutout rectangle, relative to image dimensions.
 
+        # CUSTOMIZATION START
+        self.run_dir = run_dir
+        self.batch_size = batch_size
+        # CUSTOMIZATION END
+
         # Setup orthogonal lowpass filter for geometric augmentations.
         self.register_buffer('Hz_geom', upfirdn2d.setup_filter(wavelets['sym6']))
 
@@ -183,7 +194,7 @@ class AugmentPipe(torch.nn.Module):
             Hz_fbank[i, (Hz_fbank.shape[1] - Hz_hi2.size) // 2 : (Hz_fbank.shape[1] + Hz_hi2.size) // 2] += Hz_hi2
         self.register_buffer('Hz_fbank', torch.as_tensor(Hz_fbank, dtype=torch.float32))
 
-    def forward(self, images, debug_percentile=None):
+    def forward(self, images, allow_debug_print, debug_percentile=None):
         assert isinstance(images, torch.Tensor) and images.ndim == 4
         batch_size, num_channels, height, width = images.shape
         device = images.device
@@ -212,7 +223,7 @@ class AugmentPipe(torch.nn.Module):
             i = torch.where(torch.rand([batch_size], device=device) < self.rotate90 * self.p, i, torch.zeros_like(i))
             if debug_percentile is not None:
                 i = torch.full_like(i, torch.floor(debug_percentile * 4))
-            G_inv = G_inv @ rotate2d_inv(-np.pi / 2 * i)
+            G_inv = G_inv @ rotate2d_inv(-np.pi / 2 * i) # pi / 2 -> 90° rotation
 
         # Apply integer translation with probability (xint * strength).
         if self.xint > 0:
@@ -223,7 +234,7 @@ class AugmentPipe(torch.nn.Module):
             G_inv = G_inv @ translate2d_inv(torch.round(t[:,0] * width), torch.round(t[:,1] * height))
 
         # --------------------------------------------------------
-        # Select parameters for general geometric transformations. # todo limit the range of rotate to [-2 2] degree
+        # Select parameters for general geometric transformations.
         # --------------------------------------------------------
 
         # Apply isotropic scaling with probability (scale * strength).
@@ -241,7 +252,7 @@ class AugmentPipe(torch.nn.Module):
             theta = torch.where(torch.rand([batch_size], device=device) < p_rot, theta, torch.zeros_like(theta))
             if debug_percentile is not None:
                 theta = torch.full_like(theta, (debug_percentile * 2 - 1) * np.pi * self.rotate_max)
-            G_inv = G_inv @ rotate2d_inv(-theta) # Before anisotropic scaling. # todo
+            G_inv = G_inv @ rotate2d_inv(-theta) # Before anisotropic scaling.
 
         # Apply anisotropic scaling with probability (aniso * strength).
         if self.aniso > 0:
@@ -257,7 +268,7 @@ class AugmentPipe(torch.nn.Module):
             theta = torch.where(torch.rand([batch_size], device=device) < p_rot, theta, torch.zeros_like(theta))
             if debug_percentile is not None:
                 theta = torch.zeros_like(theta)
-            G_inv = G_inv @ rotate2d_inv(-theta) # After anisotropic scaling. # todo
+            G_inv = G_inv @ rotate2d_inv(-theta) # After anisotropic scaling.
 
         # Apply fractional translation with probability (xfrac * strength).
         if self.xfrac > 0:
@@ -431,6 +442,50 @@ class AugmentPipe(torch.nn.Module):
             mask = torch.logical_or(mask_x, mask_y).to(torch.float32)
             images = images * mask
 
+        # CUSTOMIZATION START # (ONLY FOR DEBUG), to see the Real Augmented images
+        #if allow_debug_print:
+        #    self.visualize_batch(img_tensor=(images + 1) * (255 / 2), n_img=16, n_img_row=4)  # if n_img=16 and we have 2 modes we'll have 8 images per mode
+        # CUSTOMIZATION STOP
         return images
+
+    # CUSTOMIZATION START
+    def visualize_batch(self, img_tensor, n_img=16, n_img_row=4, fname=None):
+        if fname is None:
+            fname = 'img_p'
+
+        # Function to concatenate images along xaxis (rows).
+        def hconcat(x, n):
+            xrow = []
+            for batch_idx in range(n):
+                img = x[batch_idx].detach().cpu().numpy()  # C x H x W
+                for mode_idx in range(img.shape[0]):  # Append the modalities
+                    xrow.append(img[mode_idx])  # H x W
+            return np.concatenate(xrow, axis=1)  # H x W x W*n_img
+
+        if ~os.path.exists(os.path.join(self.run_dir, 'augmented_img', f"augmented_img_{self.p}.png")):
+            # Sanity check of the input.
+            n_modes = img_tensor.shape[1]
+            n_batch = n_img // n_modes  # if we want 16 images we sample 8 batch if we have two modes
+            assert n_batch <= self.batch_size
+            assert len(img_tensor.shape) == 4  # B x C x H x W
+
+            # Concatenate along yaxis (columns).
+            xrowcol = []
+            for idx in range(n_img_row):
+                xrowcol.append(hconcat(img_tensor[idx * n_modes:], n=n_batch // n_img_row))
+            xrowcol = np.concatenate(xrowcol, axis=0)
+
+            # Plot figure.
+            util_general.create_dir(os.path.join(self.run_dir, 'augmented_img'))
+
+            plt.figure(figsize=(8, 6))
+            plt.imshow(xrowcol, cmap='gray', vmin=0.0, vmax=255.0, aspect='equal')
+            plt.axis('off')
+            plt.savefig(os.path.join(self.run_dir, 'augmented_img', f"{fname}_{self.p}.png"), format='png')
+            plt.show()
+            plt.close()
+
+    # CUSTOMIZATION END
+    # ----------------------------------------------------------------------------
 
 #----------------------------------------------------------------------------

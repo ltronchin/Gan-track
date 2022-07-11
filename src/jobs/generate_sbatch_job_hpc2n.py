@@ -67,7 +67,7 @@ def main():
     # Transformations options. (rotate90 exluded)
     pixel_blitting = 'xflip,xint' # 'xflip,rotate90,xint'
     general_geometric = 'scale,rotate,aniso,xfrac' # rotate range limited to [-2 2] degree
-    color = 'brightness,contrast'
+    color = '' # 'brightness,contrast'
     image_space_filtering = ''
     image_space_corruptions = ''
 
@@ -77,11 +77,11 @@ def main():
                 'noaug',  # no aug case
                 pixel_blitting,
                 pixel_blitting + ',' + general_geometric,
-                pixel_blitting + ',' + color,
+                #pixel_blitting + ',' + color,
                 general_geometric,
-                general_geometric + ',' + color,
-                general_geometric + ',' + color,
-                pixel_blitting + ',' + general_geometric + ',' + color
+                #general_geometric + ',' + color,
+                #general_geometric + ',' + color,
+                #pixel_blitting + ',' + general_geometric + ',' + color
             ],
             'modalities': [
                 'MR_nonrigid_CT,MR_MR_T2'
@@ -135,11 +135,13 @@ def main():
                 c.aug                   = 'noaug'
                 c.ada_kimg              = 500
                 c.aug_opts              = 'noaug'
+                c.rotate_max            = 0
                 c.target                = 0
             else:
                 c.aug                   = 'ada'
                 c.ada_kimg              = 500
                 c.aug_opts              = opt_aug
+                c.rotate_max            = 5
                 c.target                = 0.6
 
             # Metrics options.

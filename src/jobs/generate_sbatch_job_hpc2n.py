@@ -52,6 +52,7 @@ def main():
         --cbase=<cbase>
         --kimg=<kimg>
         --gpus=<n_gpus>
+        --workers=<workers>
         --gamma=<gamma>
         --snap=<snap>
         --mirror=<mirror>
@@ -124,6 +125,7 @@ def main():
             # Training options.
             c.kimg                  = 10000
             c.gpus                  = 1
+            c.workers               = 3
             c.gamma                 = 0.8192
             c.snap                  = 10
             c.mirror                = 1

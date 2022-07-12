@@ -169,7 +169,9 @@ def parse_separated_list_comma(l):
 # CUSTOMIZING START-ADDING NEW PARAMETERs
 @click.option('--ada_kimg',     help='ADA adjustment speed',                                    type=click.IntRange(min=1), default=500, show_default=True)
 @click.option('--aug_opts',     help='Augmentation transformation option to enable',            type=parse_comma_separated_list, default='xflip,xint,scale,rotate,aniso,xfrac', show_default=True)
-@click.option('--rotate_max',   help='Max rotation allowed in degree',                          type=click.IntRange(min=0, max=360), default=360, show_default=True)
+@click.option('--xint_max',     help='Max integer translation, relative to image dimension',    type=click.FloatRange(min=0, max=1), default=0.0625, show_default=True)
+@click.option('--rotate_max',   help='Max rotation in degree',                                  type=click.IntRange(min=0, max=360), default=2, show_default=True)
+@click.option('--xfrac_std',    help='Std of fractioinal translation, relative to image dimension',type=click.FloatRange(min=0, max=1), default=0.0625, show_default=True)
 # CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
@@ -301,7 +303,9 @@ def main(**kwargs):
     if opts.aug != 'noaug':
         # CUSTOMIZING START -- added options to turn on some augmentation
         c.augment_kwargs = dnnlib.EasyDict(class_name='training.augment_mi.AugmentPipe', **{aug: 1 for aug in opts.aug_opts})
+        c.augment_kwargs.xint_max = opts.xint_max
         c.augment_kwargs.rotate_max = opts.rotate_max / 360 # the AugmentPipe accepts float rotation maximum values from 0 (rotation disabled) to 1 (full circle)
+        c.augment_kwargs.xfrac_std = opts.xfrac_std
         if opts.aug == 'ada':
             c.ada_target = opts.target
             #c.ada_kimg = opts.ada_kimg # added

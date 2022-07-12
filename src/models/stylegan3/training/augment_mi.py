@@ -137,7 +137,7 @@ class AugmentPipe(torch.nn.Module):
         self.register_buffer('p', torch.ones([]))       # Overall multiplier for augmentation probability.
 
         # Pixel blitting.
-        self.xflip             = float(xflip)              # Probability multiplier for x-flip.
+        self.xflip             = float(xflip)             # Probability multiplier for x-flip.
         self.rotate90         = float(rotate90)         # Probability multiplier for 90 degree rotations.
         self.xint             = float(xint)             # Probability multiplier for integer translation.
         self.xint_max         = float(xint_max)         # Range of integer translation, relative to image dimensions.
@@ -164,9 +164,9 @@ class AugmentPipe(torch.nn.Module):
         self.saturation_std   = float(saturation_std)   # Log2 standard deviation of saturation.
 
         # Image-space filtering.
-        self.imgfilter        = float(imgfilter)        # Probability multiplier for image-space filtering.
+        self.imgfilter        = float(imgfilter)         # Probability multiplier for image-space filtering.
         self.imgfilter_bands  = list(imgfilter_bands)   # Probability multipliers for individual frequency bands.
-        self.imgfilter_std    = float(imgfilter_std)    # Log2 standard deviation of image-space filter amplification.
+        self.imgfilter_std    = float(imgfilter_std)     # Log2 standard deviation of image-space filter amplification.
 
         # Image-space corruptions.
         self.noise            = float(noise)            # Probability multiplier for additive RGB noise.
@@ -299,8 +299,12 @@ class AugmentPipe(torch.nn.Module):
             mx0, my0, mx1, my1 = margin.ceil().to(torch.int32)
 
             # Pad image and adjust origin.
-            images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='reflect')
+            # CUSTOMIZING START change padding from reflect to constant
+            #images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='reflect') # pads the input tensor using the reflection of the input boundary
+            images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='constant', value= images.min().item()) # pads the input tensor boundaries with a constant value
+            #images = torch.nn.functional.pad(input=images, pad=[mx0, mx1, my0, my1], mode='replicate') # pads the input tensor using replication of the input boundary.
             G_inv = translate2d((mx0 - mx1) / 2, (my0 - my1) / 2) @ G_inv
+            # CUSTOMIZING STOP
 
             # Upsample.
             images = upfirdn2d.upsample2d(x=images, f=self.Hz_geom, up=2)
@@ -443,8 +447,8 @@ class AugmentPipe(torch.nn.Module):
             images = images * mask
 
         # CUSTOMIZATION START # (ONLY FOR DEBUG), to see the Real Augmented images
-        #if allow_debug_print:
-        #    self.visualize_batch(img_tensor=(images + 1) * (255 / 2), n_img=16, n_img_row=4)  # if n_img=16 and we have 2 modes we'll have 8 images per mode
+        if allow_debug_print:
+            self.visualize_batch(img_tensor=(images + 1) * (255 / 2), n_img=16, n_img_row=4)  # if n_img=16 and we have 2 modes we'll have 8 images per mode
         # CUSTOMIZATION STOP
         return images
 

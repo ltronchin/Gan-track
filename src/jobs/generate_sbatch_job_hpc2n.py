@@ -135,13 +135,17 @@ def main():
                 c.aug                   = 'noaug'
                 c.ada_kimg              = 500
                 c.aug_opts              = 'noaug'
+                c.xint_max              = 0
                 c.rotate_max            = 0
+                c.xfrac_std             = 0
                 c.target                = 0
             else:
                 c.aug                   = 'ada'
                 c.ada_kimg              = 500
                 c.aug_opts              = opt_aug
-                c.rotate_max            = 5
+                c.xint_max              = 0.0625
+                c.rotate_max            = 2
+                c.xfrac_std             = 0.0625
                 c.target                = 0.6
 
             # Metrics options.

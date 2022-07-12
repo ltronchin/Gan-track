@@ -114,7 +114,7 @@ class StyleGAN2Loss(Loss):
             name = 'Dreal' if phase == 'Dmain' else 'Dr1' if phase == 'Dreg' else 'Dreal_Dr1'
             with torch.autograd.profiler.record_function(name + '_forward'):
                 real_img_tmp = real_img.detach().requires_grad_(phase in ['Dreg', 'Dboth'])
-                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma)  # self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, allow_debug_print=False) # ONLY FOR DEBUG to print samples images in augment_mi.py script
+                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, allow_debug_print=False)  # ONLY FOR DEBUG to print samples images in augment_mi.py script
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())
 

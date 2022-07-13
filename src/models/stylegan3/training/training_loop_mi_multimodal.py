@@ -52,13 +52,13 @@ def convert_to_grayscale(images, hi=None, low=None): # rescale the image into th
 # CUSTOMIZING END
 #----------------------------------------------------------------------------
 
-def setup_snapshot_image_grid(training_set, random_seed=0):
+def setup_snapshot_image_grid(training_set, modalities, random_seed=0):
     rnd = np.random.RandomState(random_seed)
     gw = np.clip(7680 // training_set.image_shape[2], 7, 32) # control the width
     gh = np.clip(4320 // training_set.image_shape[1], 4, 32) # control the height
 
     # CUSTOMIZING START
-    gw = int(gw - (gw % len(training_set._modalities))) # adapt the dimensions of output image
+    gw = int(gw - (gw % len(modalities))) # adapt the dimensions of output image
     # CUSTOMIZING END
 
     # No labels => show random subset of training samples.
@@ -66,7 +66,7 @@ def setup_snapshot_image_grid(training_set, random_seed=0):
         all_indices = list(range(len(training_set)))
         rnd.shuffle(all_indices)
         # CUSTOMIZING START
-        g = int(gw * gh / (len(training_set._modalities)))
+        g = int(gw * gh / (len(modalities)))
         grid_indices = [all_indices[i % len(all_indices)] for i in range(g)]
         # CUSTOMIZING END
     else:
@@ -183,6 +183,9 @@ def training_loop(
         print('Image shape:', training_set.image_shape)
         print('Label shape:', training_set.label_shape)
         print()
+    # CUSTOMIZING START -- added modalities param
+    modalities = training_set._modalities
+    # CUSTOMIZING STOP
 
     # Construct networks.
     if rank == 0:
@@ -263,7 +266,7 @@ def training_loop(
     grid_c = None
     if rank == 0:
         print('Exporting sample images...')
-        grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
+        grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set, modalities=modalities)
         # CUSTOMIZING START
         save_image_grid(images, os.path.join(run_dir, 'reals.png'), grid_size=grid_size)
         # CUSTOMIZING END
@@ -434,26 +437,17 @@ def training_loop(
         if (snapshot_data is not None) and (len(metrics) > 0):
             if rank == 0:
                 print('Evaluating metrics...')
-
             for metric in metrics:
                 # CUSTOMIZING START
-                if len(training_set._modalities) > 1:
-                    result_dict_modalities = {}
-                    for idx_mode, mode in enumerate(training_set._modalities):
-                        result_dict = metric_main_mi_multimodal.calc_metric(metric=metric, G=snapshot_data['G_ema'],  dataset_kwargs=training_set_kwargs,
-                            num_gpus=num_gpus, rank=rank, device=device,  cache=metrics_cache, mode_dict={'mode_name': mode, 'mode_idx':idx_mode}
-                        )
-                        if rank == 0:
-                            metric_main_mi_multimodal.report_metric(result_dict, mode, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
-                        result_dict_modalities[metric + '__' + mode] = list(result_dict.results.values())[0]
-                    stats_metrics.update(result_dict_modalities) # For Tensorboard
-                else:
+                result_dict_modalities = {}
+                for idx_mode, mode in enumerate(modalities):
                     result_dict = metric_main_mi_multimodal.calc_metric(metric=metric, G=snapshot_data['G_ema'],  dataset_kwargs=training_set_kwargs,
-                        num_gpus=num_gpus, rank=rank, device=device, cache=metrics_cache
+                        num_gpus=num_gpus, rank=rank, device=device,  cache=metrics_cache, mode_dict={'mode_name': mode, 'mode_idx':idx_mode}
                     )
                     if rank == 0:
-                        metric_main_mi_multimodal.report_metric(result_dict, mode=training_set._modalities[0], run_dir=run_dir, snapshot_pkl=snapshot_pkl)
-                    stats_metrics.update(result_dict.results)
+                        metric_main_mi_multimodal.report_metric(result_dict,  mode=mode, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
+                    result_dict_modalities[metric + '__' + mode] = list(result_dict.results.values())[0]
+                stats_metrics.update(result_dict_modalities) # For Tensorboard
                 # CUSTOMIZING END
         del snapshot_data # conserve memory
 

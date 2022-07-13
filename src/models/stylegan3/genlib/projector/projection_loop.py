@@ -125,7 +125,7 @@ def project(
         target_mode = target_mode.to(device).to(torch.float32)
         if target_mode.shape[2] > 256:
             target_mode = F.interpolate(target_mode, size=(256, 256), mode='area')
-        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)  # todo why the operation change target_mode?
+        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)  # NOTE: the values of input tensor are rescaled from an internal operation of vgg16
 
     w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True)  # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
@@ -168,9 +168,8 @@ def project(
             pass
         else:  # Multimodal input.
             synth_modalities = {
-                mode: synth[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
-            } # todo clone to get the gradient to be backpropagated?
-
+                mode: synth[:, idx_mode, :, :].clone().unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
+            } #  synth[:, idx_mode, :, :] is a leaf variable! Gradient needed, we use clone to not destroy the computational graph
 
         # Pixel-based loss.
         pix_loss = {}
@@ -189,7 +188,7 @@ def project(
             if synth_mode.shape[2] > 256:
                 synth_mode = F.interpolate(synth_mode, size=(256, 256), mode='area')
             # Features for synth images.
-            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True) # todo why the operation change synth_mode?
+            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True) # NOTE: the values of input tensor are rescaled from an internal operation of vgg16
 
             # Compute distance.
             dist[mode] = w_lpips * ((target_features[mode] - synth_features[mode]).square().sum())

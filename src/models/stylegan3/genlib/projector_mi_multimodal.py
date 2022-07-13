@@ -185,31 +185,31 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 @click.command()
 # Data parameters
 # Required
-@click.option('--data',         help='Target image dataset to project to', metavar='[ZIP|DIR]',     type=str, required=True)
-@click.option('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
-@click.option('--modalities',   help="Modalities for StyleGAN",   metavar="STRING",             type=str, default="MR_nonrigid_CT,MR_MR_T2")
-@click.option('--dataset',      help="Dataset name",   metavar="STRING",                        type=str, default="Pelvis_2.1")
-@click.option('--split',        help="Validation split",   metavar="STRING",                    type=str, default="train")
-@click.option('--dtype',        help='Dynamic range of images',                                 type=str, default='float32')
-@click.option('--desc',         help='String to include in result dir name', metavar='STR',     type=str)
+@click.option('--data',                         help='Target image dataset to project to', metavar='[ZIP|DIR]',     type=str, required=True)
+@click.option('--outdir',                       help='Where to save the results', metavar='DIR',                required=True)
+@click.option('--modalities',                   help="Modalities for StyleGAN",   metavar="STRING",             type=str, default="MR_nonrigid_CT,MR_MR_T2")
+@click.option('--dataset',                      help="Dataset name",   metavar="STRING",                        type=str, default="Pelvis_2.1")
+@click.option('--split',                        help="Validation split",   metavar="STRING",                    type=str, default="train")
+@click.option('--dtype',                        help='Dynamic range of images',                                 type=str, default='float32')
+@click.option('--desc',                         help='String to include in result dir name', metavar='STR',     type=str)
 
-#@click.option('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
-#@click.option('--batch',        help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
-@click.option('--seed',         help='Random seed', type=int, default=303, show_default=True)
-@click.option('--snap',         help='How often to save snapshots', metavar='TICKS',            type=click.IntRange(min=1), default=50, show_default=True)
-@click.option('--workers',      help='DataLoader worker processes', metavar='INT',              type=click.IntRange(min=1), default=3, show_default=True)
+#@click.option('--gpus',                        help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
+#@click.option('--batch',                       help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
+@click.option('--seed',                         help='Random seed', type=int, default=303, show_default=True)
+@click.option('--snap',                         help='How often to save snapshots', metavar='TICKS',            type=click.IntRange(min=1), default=50, show_default=True)
+@click.option('--workers',                      help='DataLoader worker processes', metavar='INT',              type=click.IntRange(min=1), default=3, show_default=True)
 
 # Projector parameters.
 # Required
-@click.option('--experiment',   help='Experiment run id to take from the results', type=str, required=True)
-@click.option('--network_pkl',  help='Network pickle filename or Metric filename', type=str, required=True)
-@click.option('--target_fname', help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
-@click.option('--num-steps',    help='Number of optimization steps', type=int, default=1000, show_default=True)
-@click.option('--w_lpips',    help='Weight of lpips loss', type=float, default=1.0, show_default=True)
-@click.option('--w_pix',    help='Weight of recontruction loss', type=float, default=1.0, show_default=True)
-@click.option('--save_video',   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
-@click.option('--save_final_projection', help='Save the final results of projection', type=bool, default=True, show_default=True)
-@click.option('--save_optimization_history', help='Save the history of optimization process', type=bool, default=True, show_default=True)
+@click.option('--experiment',                   help='Experiment run id to take from the results', type=str, required=True)
+@click.option('--network_pkl',                  help='Network pickle filename or Metric filename', type=str, required=True)
+@click.option('--target_fname',                 help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
+@click.option('--num-steps',                    help='Number of optimization steps', type=int, default=1000, show_default=True)
+@click.option('--w_lpips',                      help='Weight of lpips loss', type=float, default=1.0, show_default=True)
+@click.option('--w_pix',                        help='Weight of recontruction loss', type=float, default=0, show_default=True)
+@click.option('--save_video',                   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
+@click.option('--save_final_projection',         help='Save the final results of projection', type=bool, default=True, show_default=True)
+@click.option('--save_optimization_history',    help='Save the history of optimization process', type=bool, default=True, show_default=True)
 def main(**kwargs):
 
     # Initialize config.

@@ -22,7 +22,7 @@ import dnnlib
 
 class MetricOptions:
     # CUSTOMIZING START
-    def __init__(self, G=None, G_kwargs={}, dataset_kwargs={}, num_gpus=1, rank=0, device=None, progress=None, cache=True, idx_mode=None):
+    def __init__(self, G=None, G_kwargs={}, dataset_kwargs={}, num_gpus=1, rank=0, device=None, progress=None, cache=True, mode_dict=None):
     # CUSTOMIZING END
         assert 0 <= rank < num_gpus
         self.G              = G
@@ -34,7 +34,7 @@ class MetricOptions:
         self.progress       = progress.sub() if progress is not None and rank == 0 else ProgressMonitor()
         self.cache          = cache
         # CUSTOMIZING START
-        self.idx_mode     = idx_mode
+        self.mode_dict     = mode_dict
         # CUSTOMIZING END
 
 #----------------------------------------------------------------------------
@@ -198,7 +198,7 @@ class ProgressMonitor:
 
 #----------------------------------------------------------------------------
 
-def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_mode, rel_lo=0, rel_hi=1, batch_size=64, data_loader_kwargs=None, max_items=None, **stats_kwargs):
+def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, mode_dict, rel_lo=0, rel_hi=1, batch_size=64, data_loader_kwargs=None, max_items=None, **stats_kwargs):
     dataset = dnnlib.util.construct_class_by_name(**opts.dataset_kwargs)
     if data_loader_kwargs is None:
         data_loader_kwargs = dict(pin_memory=True, num_workers=3, prefetch_factor=2)
@@ -210,7 +210,7 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_m
         args = dict(dataset_kwargs=opts.dataset_kwargs, detector_url=detector_url, detector_kwargs=detector_kwargs, stats_kwargs=stats_kwargs)
         md5 = hashlib.md5(repr(sorted(args.items())).encode('utf-8'))
         # CUSTOMIZING START -- create a TAG for the features considering the current modalities
-        cache_tag = f'{dataset.name}-{idx_mode}-{get_feature_detector_name(detector_url)}-{md5.hexdigest()}'
+        cache_tag = f"{dataset.name}-{mode_dict['mode_name']}-{get_feature_detector_name(detector_url)}-{md5.hexdigest()}"
         # CUSTOMIZING END
         cache_file = dnnlib.make_cache_dir_path('gan-metrics', cache_tag + '.pkl')
 
@@ -248,8 +248,8 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_m
         # CUSTOMIZING END
 
         # CUSTOMIZING START -- take care of the multimodal nature of the input
-        if idx_mode is not None:
-            x = images[:, idx_mode, :, :].unsqueeze(dim=1)
+        if mode_dict is not None:
+            x = images[:, mode_dict['mode_idx'], :, :].unsqueeze(dim=1)
         else:
             x = images
         if x.shape[1] == 1:
@@ -269,7 +269,7 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, idx_m
 
 #----------------------------------------------------------------------------
 
-def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, idx_mode, rel_lo=0, rel_hi=1, batch_size=64, batch_gen=None, **stats_kwargs):
+def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, mode_dict, rel_lo=0, rel_hi=1, batch_size=64, batch_gen=None, **stats_kwargs):
     if batch_gen is None:
         batch_gen = min(batch_size, 4)
     assert batch_size % batch_gen == 0
@@ -294,8 +294,8 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, idx
             images.append(img)
         images = torch.cat(images)
         # CUSTOMIZING START -- take care of the multimodal nature of the input
-        if idx_mode is not None:
-            x = images[:, idx_mode, :, :].unsqueeze(dim=1)
+        if mode_dict is not None:
+            x = images[:, mode_dict['mode_idx'], :, :].unsqueeze(dim=1)
         else:
             x = images
         if x.shape[1] == 1:

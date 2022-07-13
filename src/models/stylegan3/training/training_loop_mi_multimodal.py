@@ -441,7 +441,7 @@ def training_loop(
                     result_dict_modalities = {}
                     for idx_mode, mode in enumerate(training_set._modalities):
                         result_dict = metric_main_mi_multimodal.calc_metric(metric=metric, G=snapshot_data['G_ema'],  dataset_kwargs=training_set_kwargs,
-                            num_gpus=num_gpus, rank=rank, device=device,  cache=metrics_cache, idx_mode=idx_mode
+                            num_gpus=num_gpus, rank=rank, device=device,  cache=metrics_cache, mode_dict={'mode_name': mode, 'mode_idx':idx_mode}
                         )
                         if rank == 0:
                             metric_main_mi_multimodal.report_metric(result_dict, mode, run_dir=run_dir, snapshot_pkl=snapshot_pkl)

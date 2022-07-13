@@ -199,7 +199,7 @@ def open_image_folder_patients(source_dir, transpose_img):
                 img = {}  # dictionary of modalities.
                 for name_modality in name_modalities:
                     img[name_modality] = fdata[name_modality][:, :, d]  # based on depth index (d): 0000->0128
-                    if transpose_img:
+                    if transpose_img: # fix orientation
                         img[name_modality] = np.transpose(img[name_modality], [1, 0])
                 yield dict(img=img, label=labels.get(arch_fname), name=f"{patient_name:s}_{d:05d}", folder_name=f"{patient_name:s}", depth_index=d, total_depth=depth)
 
@@ -391,7 +391,7 @@ def find_mask_file(folder_index, folders, dest, dataset):
         elif dataset == "kits19":
             return "imaging"
         elif dataset == "Pelvis_2.1":
-            return "MR_MR_T2"
+            return "MR_nonrigid_CT" #"MR_MR_T2"
         else:
             raise NotImplementedError(f"{dataset:s} is not implemented")
 
@@ -480,12 +480,20 @@ def find_mask_file(folder_index, folders, dest, dataset):
     volume_ref = nib.load(file_ref)
     if dataset in ["spleen", "heart", "kits19"]:
         mask = smooth_mask(volume_ref, dataset)
+    elif dataset == "Pelvis_2.1":
+        m = nilearn.masking.compute_epi_mask(volume_ref) # return a binary nifti object
+        m = (m.get_fdata()).astype(np.uint8) # get mask data
+        m = scipy.ndimage.morphology.binary_fill_holes(m).astype(np.uint8) # fill the hole
+
+        affine = volume_ref.affine
+        mask = nib.Nifti1Image(m, affine=affine)
     else:
         mask = nilearn.masking.compute_epi_mask(volume_ref)
+
     nib.save(mask, output_file)
+
     # except:
     #     raise IOError(f"fail to find mask {file_ref:s}")
-
 
 def find_mask_folder(source: str, dest: str, dataset: str):
     # multithreading
@@ -514,39 +522,51 @@ def visualize(img):
     plt.imshow(x, cmap="gray", vmin=0, vmax=255)
     plt.show()
 
-def sanity_check(image, pop_range, dest, patient_folder):
+def sanity_check(image, pop_range, dest, patient_folder, mask=None):
     # Sanity check
 
     x = image['img']
 
+    root_sanity_check_dir = os.path.join(dest, 'sanity_check', patient_folder)
     for m in list(x.keys()):
-        sanity_check_dir = os.path.join(dest, 'sanity_check_1', patient_folder, m)
+        sanity_check_dir = os.path.join(root_sanity_check_dir, m)
         path_utils.make_dir(sanity_check_dir, is_printing=False)
         im = Image.fromarray(x[m] / 255)
         im.save(os.path.join(sanity_check_dir, f"{image['name']}.tif"), 'tiff', compress_level=0, optimize=False)
+    if mask is not None:
+        sanity_check_dir = os.path.join(root_sanity_check_dir, 'mask')
+        path_utils.make_dir(sanity_check_dir, is_printing=False)
+        im_mask = Image.fromarray(mask*255)
+        im_mask.save(os.path.join(sanity_check_dir, f"mask_{image['name']}.tif"), 'tiff', compress_level=0, optimize=False)
 
     if image['depth_index'] == pop_range:
         ftoprint = 'first_from_stack'
     elif image['depth_index'] == (image['total_depth'] - pop_range - 1):
         ftoprint = 'last_from_stack'
+    elif image['depth_index'] ==  image['total_depth']//2:
+        ftoprint = 'mid_from_stack'
     else:
         ftoprint = None
 
     if ftoprint is not None:
         print(f"{ftoprint}: {image['name']}")
         for m in list(x.keys()):
-            sanity_check_dir = os.path.join(dest, 'sanity_check_1', f'{ftoprint}_{pop_range}', m)
+            sanity_check_dir = os.path.join(dest, 'sanity_check', f'{ftoprint}_{pop_range}', m)
             path_utils.make_dir(sanity_check_dir, is_printing=False)
             im = Image.fromarray(x[m] / 255)
             im.save(os.path.join(sanity_check_dir, f"{image['name']}.tif"), 'tiff', compress_level=0, optimize=False)
 
 def  convert_dataset_mi(
-    source: str,
-    dest: str,
-    pop_range: int = 10,
-    transpose_img: bool = True,
-    is_overwrite: bool = False,
-    is_visualize=True
+        source: str,
+        source_mask: str,
+        dest: str,
+        pop_range: int = 10,
+        transpose_img: bool = True,
+        apply_mask: bool = True,
+        hi: float =255.0,
+        low: float =0.0,
+        is_overwrite: bool = False,
+        is_visualize=False
 ):
 
     def fix_orientation(x):
@@ -568,9 +588,11 @@ def  convert_dataset_mi(
 
     # Open normalized folder.
     num_files, input_iter = open_dataset_patient(source, transpose_img) # Core function.
+    # Open mask folder
+    num_files_mask, input_iter_mask = open_dataset_patient(source_mask, transpose_img)  # Core function.
 
     # Create a temp folder to be save into zipfile
-    temp = os.path.join(dest, "temp_1")
+    temp = os.path.join(dest, "temp")
 
     if os.path.isdir(temp) and is_overwrite:
         print(f"Removing {temp}")
@@ -579,7 +601,7 @@ def  convert_dataset_mi(
 
     dataset_attrs = None
 
-    for idx, image in enumerate(input_iter):
+    for (idx, image), (_, image_mask) in zip(enumerate(input_iter), enumerate(input_iter_mask)):
 
         folder_name = image["folder_name"] # patient name
         idx_name = image["name"]
@@ -604,18 +626,53 @@ def  convert_dataset_mi(
 
         img = image["img"]
 
-        # Transform may drop images.
-        if img is None:
-            continue
+        # Apply mask
+        # x1 = np.arange(9.0).reshape((3, 3))
+        # x2 =  np.random.choice([0, 1], size=(9,)).reshape((3, 3))
+        # np.multiply(x1, x2)
+        if apply_mask: # apply mask to both modalities
+            img_mask = image_mask["img"]["mask"]
+            img_mask = img_mask.astype(np.uint8)
+
+            import matplotlib.pyplot as plt
+            sanity_check_dir = os.path.join(dest, 'sanity_check', folder_name, 'check_mask_op')
+            path_utils.make_dir(sanity_check_dir, is_printing=False)
+            fig = plt.figure()
+            gs = fig.add_gridspec(2, 3, hspace=0, wspace=0)
+            axs = gs.subplots(sharex='col', sharey='row')
+            axs[0][0].imshow(img["MR_MR_T2"], cmap='gray')
+            axs[0][1].imshow(img["MR_nonrigid_CT"], cmap='gray')
+            axs[0][2].imshow(img_mask, cmap='gray')
+
+            for mode in sorted(img.keys()):
+                img[mode] = np.multiply(img[mode], img_mask) # Multiply arguments element-wise.
+                img[mode] =  img[mode].astype(np.float64)
+
+            axs[1][0].imshow(img["MR_MR_T2"], cmap='gray')
+            axs[1][1].imshow(img["MR_nonrigid_CT"], cmap='gray')
+            axs[1][2].imshow(img_mask, cmap='gray')
+            for ax_row in axs:
+                for ax in ax_row:
+                    ax.axis('off')
+            fig.savefig(os.path.join(sanity_check_dir, f"mask_op_{image['name']}.png"))
+            plt.close()
+            #plt.show()
 
         # Fix orientation --> already performed in input_iter
         # img = fix_orientation(img)
+
+        # Transform may drop images.
+        if img is None:
+            continue
 
         # Sanity check
         if random.uniform(0, 1) > 0.9:
             if is_visualize:
                 visualize(img)
-        sanity_check(image=image, pop_range=pop_range, dest=dest, patient_folder=folder_name)
+        if apply_mask:
+            sanity_check(image=image, pop_range=pop_range, dest=dest, patient_folder=folder_name, mask=img_mask)
+        else:
+            sanity_check(image=image, pop_range=pop_range, dest=dest, patient_folder=folder_name)
 
         # Error check to require uniform image attributes across # the whole dataset
         modalities = sorted(img.keys())
@@ -757,6 +814,8 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--seed', help='Name of the input dataset', required=True, type=int, default=42)
 @click.option('--configuration_file', help='Path to configuration file', required=True, metavar='PATH')
 @click.option('--data_dir', help='Directory for input dataset', required=True, metavar='PATH')
+@click.option('--data_dir_mask', help='Directory for mask dataset', metavar='PATH')
+
 @click.option('--interim_dir', help='Output directory for output dataset', required=True, metavar='PATH')
 @click.option('--reports_dir', help='Output directory for reports', required=True, metavar='PATH')
 @click.option('--dataset', help='Name of the input dataset', required=True, type=str, default='Pelvis_2.1')
@@ -766,6 +825,7 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
 @click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
 @click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', required=True, type=int, default=10)
+@click.option('--apply_mask', help='Apply to MR and CT the boolean mask computed using CT mode', required=True, type=bool, default=False)
 @click.option('--transpose_img', help='Transpose the 2D slice swapping the axis', required=True, type=bool, default=True)
 def prepare_Pelvis_2_1(**kwargs):
 
@@ -807,7 +867,7 @@ def prepare_Pelvis_2_1(**kwargs):
 
     # Files and Directories
     print('Create file and directory')
-    data_dir = os.path.join(opts.data_dir)
+    data_dir = opts.data_dir
     interim_dir = os.path.join(opts.interim_dir, opts.dataset)
     reports_dir = os.path.join(opts.reports_dir, opts.dataset)
     path_utils.make_dir(reports_dir)
@@ -817,6 +877,8 @@ def prepare_Pelvis_2_1(**kwargs):
     print('Training options:')
     print()
     print(f'Data directory:      {data_dir}')
+    if opts.data_dir_mask is not None:
+        print(f'Data mask directory:    {opts.data_dir_mask}')
     print(f'Output directory:    {interim_dir}')
     print(f'Report directory:    {reports_dir}')
     print(f'Dataset resolution:  {opts.resolution}')
@@ -826,6 +888,7 @@ def prepare_Pelvis_2_1(**kwargs):
     print(f'Processing step:     {opts.processing_step}')
     print(f'Validation method:   {opts.validation_method}')
     print(f'Validation split:    {opts.validation_split}')
+    print(f'Apply mask:          {opts.apply_mask}')
     print(f'Number of slice to drop and the beginning/end od the stack:    {opts.pop_range}')
     print(f'Transpose the slice [x y] --> [y x]:                           {opts.transpose_img}')
     print()
@@ -865,13 +928,13 @@ def prepare_Pelvis_2_1(**kwargs):
             source=data_dir, dest=dest_dir, dataset=opts.dataset, modes_args=cfg['data']['modes']
         )
 
-    # # Find mask of each volume # NOT IMPLEMENTED
-    # if opts.processing_step == 'mask_nifti':
-    #     dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_masked')
-    #     print(f"\nMask each volume using nilearn package, output folder: {dest_dir}")
-    #     find_mask_folder(
-    #         source=data_dir,  dest=dest_dir,   dataset=opts.dataset,
-    #      )
+    # Find mask of each volume using CT data
+    if opts.processing_step == 'mask_nifti':
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_mask')
+        print(f"\nMask each volume using nilearn package, output folder: {dest_dir}")
+        find_mask_folder(
+            source=data_dir,  dest=dest_dir,   dataset=opts.dataset,
+         )
 
     # Write to pickle
     if opts.processing_step == 'snap_pickle':
@@ -882,7 +945,7 @@ def prepare_Pelvis_2_1(**kwargs):
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
         convert_dataset_mi(
-            source=data_dir, dest=dest_dir, pop_range=10, transpose_img = True
+            source=data_dir, source_mask=opts.data_dir_mask,  dest=dest_dir, pop_range=10, transpose_img = opts.transpose_img, apply_mask=opts.apply_mask, hi=255.0, low=0.0
         )
 
     # Save as zip

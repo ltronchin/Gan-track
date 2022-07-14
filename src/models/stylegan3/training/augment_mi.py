@@ -194,7 +194,7 @@ class AugmentPipe(torch.nn.Module):
             Hz_fbank[i, (Hz_fbank.shape[1] - Hz_hi2.size) // 2 : (Hz_fbank.shape[1] + Hz_hi2.size) // 2] += Hz_hi2
         self.register_buffer('Hz_fbank', torch.as_tensor(Hz_fbank, dtype=torch.float32))
 
-    def forward(self, images, allow_debug_print, debug_percentile=None):
+    def forward(self, images, allow_aug_debug_print, debug_percentile=None):
         assert isinstance(images, torch.Tensor) and images.ndim == 4
         batch_size, num_channels, height, width = images.shape
         device = images.device
@@ -301,8 +301,8 @@ class AugmentPipe(torch.nn.Module):
             # Pad image and adjust origin.
             # CUSTOMIZING START change padding from reflect to constant
             #images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='reflect') # pads the input tensor using the reflection of the input boundary
-            images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='constant', value= -1) # pads the input tensor boundaries with a constant value
-            #images = torch.nn.functional.pad(input=images, pad=[mx0, mx1, my0, my1], mode='replicate') # pads the input tensor using replication of the input boundary.
+            #images = torch.nn.functional.pad(input=images, pad=[mx0,mx1,my0,my1], mode='constant', value= -1) # pads the input tensor boundaries with a constant value
+            images = torch.nn.functional.pad(input=images, pad=[mx0, mx1, my0, my1], mode='replicate') # pads the input tensor using replication of the input boundary.
             G_inv = translate2d((mx0 - mx1) / 2, (my0 - my1) / 2) @ G_inv
             # CUSTOMIZING STOP
 
@@ -447,7 +447,7 @@ class AugmentPipe(torch.nn.Module):
             images = images * mask
 
         # CUSTOMIZATION START # (ONLY FOR DEBUG), to see the Real Augmented images
-        if allow_debug_print:
+        if allow_aug_debug_print:
             self.visualize_batch(img_tensor=(images + 1) * (255 / 2), n_img=16, n_img_row=4)  # if n_img=16 and we have 2 modes we'll have 8 images per mode
         # CUSTOMIZATION STOP
         return images
@@ -486,7 +486,7 @@ class AugmentPipe(torch.nn.Module):
             plt.imshow(xrowcol, cmap='gray', vmin=0.0, vmax=255.0, aspect='equal')
             plt.axis('off')
             plt.savefig(os.path.join(self.run_dir, 'augmented_img', f"{fname}_{self.p}.png"), format='png')
-            plt.show()
+            #plt.show()
             plt.close()
 
     # CUSTOMIZATION END

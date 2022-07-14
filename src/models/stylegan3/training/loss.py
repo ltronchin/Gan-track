@@ -21,7 +21,7 @@ class Loss:
 #----------------------------------------------------------------------------
 
 class StyleGAN2Loss(Loss):
-    def __init__(self, device, G, D, augment_pipe=None, r1_gamma=10, style_mixing_prob=0, pl_weight=0, pl_batch_shrink=2, pl_decay=0.01, pl_no_weight_grad=False, blur_init_sigma=0, blur_fade_kimg=0):
+    def __init__(self, device, G, D, augment_pipe=None, r1_gamma=10, style_mixing_prob=0, pl_weight=0, pl_batch_shrink=2, pl_decay=0.01, pl_no_weight_grad=False, blur_init_sigma=0, blur_fade_kimg=0, allow_aug_debug_print=False):
         super().__init__()
         self.device             = device
         self.G                  = G
@@ -36,6 +36,9 @@ class StyleGAN2Loss(Loss):
         self.pl_mean            = torch.zeros([], device=device)
         self.blur_init_sigma    = blur_init_sigma
         self.blur_fade_kimg     = blur_fade_kimg
+        # CUSTOMIZATION START
+        self.allow_aug_debug_print = allow_aug_debug_print
+        # CUSTOMIZATION STOP
 
     def run_G(self, z, c, update_emas=False):
         ws = self.G.mapping(z, c, update_emas=update_emas)
@@ -47,14 +50,14 @@ class StyleGAN2Loss(Loss):
         img = self.G.synthesis(ws, update_emas=update_emas)
         return img, ws
 
-    def run_D(self, img, c, blur_sigma=0, update_emas=False, allow_debug_print=False):
+    def run_D(self, img, c, blur_sigma=0, update_emas=False, allow_aug_debug_print=False):
         blur_size = np.floor(blur_sigma * 3)
         if blur_size > 0:
             with torch.autograd.profiler.record_function('blur'):
                 f = torch.arange(-blur_size, blur_size + 1, device=img.device).div(blur_sigma).square().neg().exp2()
                 img = upfirdn2d.filter2d(img, f / f.sum())
         if self.augment_pipe is not None:
-            img = self.augment_pipe(img, allow_debug_print) # HERE WE CALL THE AUGMENTATION PIPELINE
+            img = self.augment_pipe(img, allow_aug_debug_print) # HERE WE CALL THE AUGMENTATION PIPELINE
         logits = self.D(img, c, update_emas=update_emas) # image feeded to the Discriminator
         return logits
 
@@ -114,7 +117,7 @@ class StyleGAN2Loss(Loss):
             name = 'Dreal' if phase == 'Dmain' else 'Dr1' if phase == 'Dreg' else 'Dreal_Dr1'
             with torch.autograd.profiler.record_function(name + '_forward'):
                 real_img_tmp = real_img.detach().requires_grad_(phase in ['Dreg', 'Dboth'])
-                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, allow_debug_print=False)  # ONLY FOR DEBUG to print samples images in augment_mi.py script
+                real_logits = self.run_D(real_img_tmp, real_c, blur_sigma=blur_sigma, allow_aug_debug_print=self.allow_aug_debug_print)  # ONLY FOR DEBUG to print samples images in augment_mi.py script
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())
 

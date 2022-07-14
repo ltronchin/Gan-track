@@ -138,14 +138,19 @@ def main():
                 c.xint_max              = 0
                 c.rotate_max            = 0
                 c.xfrac_std             = 0
+                c.scale_std             = 0
+                c.aniso_std             = 0
                 c.target                = 0
             else:
                 c.aug                   = 'ada'
                 c.ada_kimg              = 500
                 c.aug_opts              = opt_aug
-                c.xint_max              = 0.0625
-                c.rotate_max            = 2
-                c.xfrac_std             = 0.0625
+
+                c.xint_max              = 0.05 # Range of integer translation, relative to image dimensions.  0.05 -> 5 percent of image dimension allowed as maximum displacement
+                c.rotate_max            = 3    # Degree max rotation
+                c.xfrac_std             = 0.05 # Log2 standard deviation of fractional translation, relative to image dimensions. 0.05 -> 5 percent of image dimension allowed as maximum displacement
+                c.scale_std             = 0.1  # Log2 standard deviation of isotropic scaling.
+                c.aniso_std             = 0.1  # Log2 standard deviation of anisotropic scaling.
                 c.target                = 0.6
 
             # Metrics options.

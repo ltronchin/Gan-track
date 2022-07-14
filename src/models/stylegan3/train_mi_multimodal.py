@@ -169,9 +169,12 @@ def parse_separated_list_comma(l):
 # CUSTOMIZING START-ADDING NEW PARAMETERs
 @click.option('--ada_kimg',     help='ADA adjustment speed',                                    type=click.IntRange(min=1), default=500, show_default=True)
 @click.option('--aug_opts',     help='Augmentation transformation option to enable',            type=parse_comma_separated_list, default='xflip,xint,scale,rotate,aniso,xfrac', show_default=True)
-@click.option('--xint_max',     help='Max integer translation, relative to image dimension',    type=click.FloatRange(min=0, max=1), default=0.0625, show_default=True)
-@click.option('--rotate_max',   help='Max rotation in degree',                                  type=click.IntRange(min=0, max=360), default=2, show_default=True)
-@click.option('--xfrac_std',    help='Std of fractioinal translation, relative to image dimension',type=click.FloatRange(min=0, max=1), default=0.0625, show_default=True)
+@click.option('--xint_max',     help='Max integer translation, relative to image dimension',    type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
+@click.option('--rotate_max',   help='Max rotation in degree',                                  type=click.IntRange(min=0, max=360), default=3, show_default=True)
+@click.option('--xfrac_std',    help='Log2 standard deviation of fractional translation',       type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
+@click.option('--scale_std',    help='Log2 standard deviation of isotropic scaling.',           type=click.FloatRange(min=0, max=1), default=0.1, show_default=True)
+@click.option('--aniso_std',    help='Log2 standard deviation of anisotropic scaling',          type=click.FloatRange(min=0, max=1), default=0.1, show_default=True)
+@click.option('--allow_aug_debug_print', help='Print the augmention results', type=bool, default=False, show_default=True)
 # CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
 @click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                  type=click.IntRange(min=0), default=0, show_default=True)
@@ -239,8 +242,9 @@ def main(**kwargs):
     c.training_set_kwargs, dataset_name = init_dataset_mi_multimodal_kwargs(data=opts.data, dtype=opts.dtype, split=opts.split, modalities=opts.modalities)
     # CUSTOMIZING END
 
-    # CUSTOMIZING START
+    # CUSTOMIZING START - custom options
     c.metrics_cache = opts.metrics_cache
+    c.loss_kwargs.allow_aug_debug_print = opts.allow_aug_debug_print
     # CUSTOMIZING END
 
     if opts.cond and not c.training_set_kwargs.use_labels:

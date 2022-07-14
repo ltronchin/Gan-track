@@ -38,6 +38,7 @@ import shutil
 import random
 import scipy
 import nilearn
+import matplotlib.pyplot as plt
 
 import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
@@ -391,7 +392,7 @@ def find_mask_file(folder_index, folders, dest, dataset):
         elif dataset == "kits19":
             return "imaging"
         elif dataset == "Pelvis_2.1":
-            return "MR_nonrigid_CT" #"MR_MR_T2"
+            return "MR_nonrigid_CT" # "MR_MR_T2" # "MR_nonrigid_CT" #"MR_MR_T2"
         else:
             raise NotImplementedError(f"{dataset:s} is not implemented")
 
@@ -472,8 +473,10 @@ def find_mask_file(folder_index, folders, dest, dataset):
 
     output_dir = os.path.join(dest, name)
     path_utils.make_dir(output_dir)
-
     output_file = os.path.join(output_dir, f"mask.nii.gz")
+
+    sanity_checkpoint_list = [10, 30, 65, 90, 120]
+    [path_utils.make_dir(os.path.join(dest, 'sanity_check', f"{x}"), is_printing=False) for x in sanity_checkpoint_list]
 
     # try:
     print(f"Reading: {file_ref}")
@@ -481,9 +484,25 @@ def find_mask_file(folder_index, folders, dest, dataset):
     if dataset in ["spleen", "heart", "kits19"]:
         mask = smooth_mask(volume_ref, dataset)
     elif dataset == "Pelvis_2.1":
-        m = nilearn.masking.compute_epi_mask(volume_ref) # return a binary nifti object
-        m = (m.get_fdata()).astype(np.uint8) # get mask data
-        m = scipy.ndimage.morphology.binary_fill_holes(m).astype(np.uint8) # fill the hole
+        m = nilearn.masking.compute_epi_mask(volume_ref)  # return a binary nifti object
+        m = (m.get_fdata()).astype(np.uint8)  # get mask data
+        for j in range(m.shape[-1]):
+            m[:, :, j] = scipy.ndimage.morphology.binary_fill_holes(m[:, :, j]).astype(np.uint8)
+            fig = plt.figure()
+            plt.imshow(m[:, :, j] * 255, cmap='gray')
+            plt.axis('off')
+            fig.savefig(os.path.join(output_dir, f"mask_{j}.png"))
+            plt.close()
+            # plt.show()
+
+            if j in sanity_checkpoint_list:
+                fig = plt.figure()
+                plt.imshow(m[:, :, j] * 255, cmap='gray')
+                plt.axis('off')
+                fig.savefig(os.path.join(dest, 'sanity_check', f"{j}", f"{name}_mask_{j}.png"))
+                plt.close()
+                #plt.show()
+
 
         affine = volume_ref.affine
         mask = nib.Nifti1Image(m, affine=affine)
@@ -501,7 +520,7 @@ def find_mask_folder(source: str, dest: str, dataset: str):
 
     # find_mask_file(0, folders, dest, dataset)
 
-    pool = Pool(processes=1)
+    pool = Pool() # Pool(processes=1)
     l = pool.starmap(
         find_mask_file,
         zip(range(len(folders)), repeat(folders), repeat(dest), repeat(dataset)),

@@ -65,21 +65,23 @@ def plot_training(history, plot_training_dir, columns_to_plot=None, **plot_args)
 def project(
         G,
         target: torch.Tensor,  # [1, C, H, W], dynamic range [0.0, 255.0], dtype float32 W & H must match G output resolution
+        modalities: list,
         *,
-        num_steps =1000,
-        w_lpips: float = 1.0,
-        w_pix: float = 1e-6,
-        w_avg_samples = 10000,
-        initial_learning_rate =  0.1,
-        initial_noise_factor = 0.05,
-        lr_rampdown_length = 0.25,  # time that lr taks to go 0 again the "initial_learning_rate"
-        lr_rampup_length = 0.05, # time that lr taks to reach the "initial_learning_rate" starting from 0
-        noise_ramp_length = 0.75,
+        num_steps: int,
+        early_stopping: int,
+        w_lpips: float,
+        w_pix: float,
+        w_avg_samples: int = 10000,
+        initial_learning_rate: float =  0.1,
+        initial_noise_factor: float = 0.05,
+        lr_rampdown_length: float = 0.25,  # time that lr takes to go 0 again the "initial_learning_rate"
+        lr_rampup_length: float = 0.05, # time that lr takes to reach the "initial_learning_rate" starting from 0
+        noise_ramp_length: float = 0.75,
         regularize_noise_weight =  1e5,
-        verbose = False,
+        verbose: bool = False,
         device: torch.device,
-        modalities: list
 ):
+    since = time.time()
     assert target.shape == (1, G.img_channels, G.img_resolution, G.img_resolution)
     # Create a modalities dictionary and take a three channel tensor.
     if target.shape[1] == 1:
@@ -93,7 +95,7 @@ def project(
         pass
     else: # Multimodal input.
         target_modatilies = {
-            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities) # is a leaf variable. No gradients needed
+            mode: target[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities) # target is a leaf variable without gradient, no need for .clone()
         }
 
     def logprint(*args):
@@ -125,7 +127,10 @@ def project(
         target_mode = target_mode.to(device).to(torch.float32)
         if target_mode.shape[2] > 256:
             target_mode = F.interpolate(target_mode, size=(256, 256), mode='area')
-        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True)  # NOTE: the values of input tensor are rescaled from an internal operation of vgg16
+        target_features[mode] = vgg16(target_mode, resize_images=False, return_lpips=True) # NOTE: the values of input tensor are normalized from an internal operation of vgg16->inplace operation on target_mode.
+            # For this reason we need to use .clone() on tensor target_modatilies[mode] to work on a different memory location and propagate the gradient.
+            # We do not use retain_grad on the variable "target_mode" as we do not use its gradient directly: it is only used as an identity function that allows the inplace ops without modifying the original Tensor
+            # and propagate the gradient to the original tensor itself.
 
     w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True)  # pylint: disable=not-callable
     w_out = torch.zeros([num_steps] + list(w_opt.shape[1:]), dtype=torch.float32, device=device)
@@ -137,9 +142,14 @@ def project(
         buf.requires_grad = True
 
     history = util_general.list_dict()
+    # Early stopping parameters
+    steps_no_improve = 0
+    best_loss = np.Inf
+    best_step = num_steps
+    print(f"Early stopping set to {early_stopping}")
     for step in range(num_steps):
         # Learning rate schedule.
-        t = step / num_steps
+        t =   step / (early_stopping*2)  # step / num_steps # todo maybe step/ealry_stopping
         w_noise_scale = w_std * initial_noise_factor * max(0.0, 1.0 - t / noise_ramp_length) ** 2
         lr_ramp = min(1.0, (1.0 - t) / lr_rampdown_length)
         lr_ramp = 0.5 - 0.5 * np.cos(lr_ramp * np.pi)
@@ -168,8 +178,8 @@ def project(
             pass
         else:  # Multimodal input.
             synth_modalities = {
-                mode: synth[:, idx_mode, :, :].clone().unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
-            } #  synth[:, idx_mode, :, :] is a leaf variable! Gradient needed, we use clone to not destroy the computational graph
+                mode: synth[:, idx_mode, :, :].unsqueeze(dim=1).repeat([1, 3, 1, 1]) for idx_mode, mode in enumerate(modalities)
+            } #  synth[:, idx_mode, :, :] is a leaf variable with gradient, we do not use .clone() as we do not perform inplace operation directly on synth[:, idx_mode, :, :]
 
         # Pixel-based loss.
         pix_loss = {}
@@ -183,12 +193,15 @@ def project(
         synth_features = {}
         dist = {}
         for mode in modalities:
-            synth_mode = synth_modalities[mode].clone()
+            synth_mode = synth_modalities[mode].clone() # .clone() can be seen as an identity function
             # Downsample image to 256x256 if it's larger than that. VGG was built for 256x256 images.
             if synth_mode.shape[2] > 256:
                 synth_mode = F.interpolate(synth_mode, size=(256, 256), mode='area')
             # Features for synth images.
-            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True) # NOTE: the values of input tensor are rescaled from an internal operation of vgg16
+            synth_features[mode] = vgg16(synth_mode, resize_images=False, return_lpips=True)  # NOTE: the values of input tensor are normalized from an internal operation of vgg16->inplace operation on synth_mode.
+            # For this reason we need to use .clone() on tensor synth_modalities[mode] to work on a different memory location and propagate the gradient.
+            # We do not use retain_grad on the variable "synth_mode" as we do not use its gradient directly: it is only used as an identity function that allows the inplace ops without modifying the original Tensor
+            # and propagate the gradient to the original tensor itself.
 
             # Compute distance.
             dist[mode] = w_lpips * ((target_features[mode] - synth_features[mode]).square().sum())
@@ -234,24 +247,44 @@ def project(
                 buf -= buf.mean()
                 buf *= buf.square().mean().rsqrt()
 
+        # Early stopping criteria
+        running_loss = loss.item()
+        if running_loss < best_loss:
+            best_step = step
+            best_loss = running_loss
+            steps_no_improve = 0
+        else:
+            steps_no_improve += 1
+            # Trigger early stopping
+            if steps_no_improve >= early_stopping:
+                print(f'\nEarly Stopping! Total steps: {step}')
+                break
+
+    time_elapsed = time.time() - since
+    print('Optimization completed in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best step: {:0f}'.format(best_step))
+    print('Best loss: {:4f}'.format(best_loss))
+
     # Format history
     history = pd.DataFrame.from_dict(history, orient='index').transpose()
-    return w_out.repeat([1, G.mapping.num_ws, 1]), history
+    return w_out.repeat([1, G.mapping.num_ws, 1]), history, best_step
 
 def run_projection(
         img_idx: int,
         img_tensor: torch.Tensor,
         outdir: str,
-        outdir_model: str,
         device: torch.device,
         modalities: list,
         dtype: str,
+        # projector parameters
+        outdir_model: str,
         num_steps: int,
+        early_stopping: int,
         w_lpips: float,
         w_pix: float,
-        save_video: bool,
-        save_final_projection: bool,
-        save_optimization_history: bool,
+        save_video: bool = False,
+        save_final_projection: bool = True,
+        save_optimization_history: bool = False,
         **kwargs
 ):
     """Project given image to the latent space of pretrained network pickle."""
@@ -269,15 +302,16 @@ def run_projection(
 
     # Optimize projection.
     start_time = perf_counter()
-    projected_w_steps, history = project(
+    projected_w_steps, history, best_step  = project(
         G=G,
         target=img_tensor,  # pylint: disable=not-callable
+        modalities=modalities,
         num_steps=num_steps,
+        early_stopping=early_stopping,
         w_lpips=w_lpips,
         w_pix=w_pix,
         verbose=True,
         device=device,
-        modalities=modalities
     )
     print(f'Elapsed: {(perf_counter() - start_time):.1f} s')
 
@@ -320,7 +354,7 @@ def run_projection(
 
     # Save final projected frame and W vector.
     if save_final_projection:
-        projected_w = projected_w_steps[-1]
+        projected_w = projected_w_steps[best_step]  #projected_w_steps[-1]
         synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
         synth_image = (synth_image + 1) * (255 / 2)  # normalize per stack
         np.savez(f'{outdir}/projected_w_{img_idx}.npz', w=projected_w.unsqueeze(0).cpu().numpy())
@@ -350,7 +384,7 @@ def projection_loop(
 
     # Initialize.
     start_time = time.time()
-    device =  torch.device('cuda', rank) #torch.device('cuda', rank) # device = torch.device('cuda:1')
+    device = torch.device('cuda:1') #torch.device('cuda', rank) # device = torch.device('cuda:1')
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
     torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
@@ -367,9 +401,10 @@ def projection_loop(
     print('Label shape:', training_set.label_shape)
     print()
 
-    # todo parameter tuning
-    # todo add a MSE based loss function on x vs x_tilde
-    # todo add parameter search over lambda
+    # todo add early stopping
+    # todo add slice step selection
+    # todo add option to provide an external starting latent point (from previuous inversion on same patient)
+    # todo Implement multiprocessing through GPU
     projected_w = np.zeros(shape=(len(training_set), 14, 512), dtype=float)
     idx = 0
     for phase_real_img, _ in training_set_iterator:

@@ -37,23 +37,24 @@ def launch_projection(c, desc, outdir, outdir_model):
     print('Training options:')
     print(json.dumps(c, indent=2))
     print()
-    print(f'Output directory:    {c.run_dir}')
-    print(f'Number of GPUs:      {c.num_gpus}')
-    print(f'Batch size:          {c.batch_size} images')
-    print(f'Dataset path:        {c.training_set_kwargs.path}')
+    print(f'Output directory:                   {c.run_dir}')
+    print(f'Number of GPUs:                     {c.num_gpus}')
+    print(f'Batch size:                         {c.batch_size} images')
+    print(f'Dataset path:                       {c.training_set_kwargs.path}')
 
-    print(f'Dataset dtype:       {c.training_set_kwargs.dtype}')
-    print(f'Split:               {c.training_set_kwargs.split}')
-    print(f'Modalities:          {c.training_set_kwargs.modalities}')
+    print(f'Dataset dtype:                      {c.training_set_kwargs.dtype}')
+    print(f'Split:                              {c.training_set_kwargs.split}')
+    print(f'Modalities:                         {c.training_set_kwargs.modalities}')
 
-    print(f'Dataset size:        {c.training_set_kwargs.max_size} images')
-    print(f'Dataset resolution:  {c.training_set_kwargs.resolution}')
-    print(f'Dataset labels:      {c.training_set_kwargs.use_labels}')
-    print(f'Dataset x-flips:      {c.training_set_kwargs.xflip}')
+    print(f'Dataset size:                       {c.training_set_kwargs.max_size} images')
+    print(f'Dataset resolution:                 {c.training_set_kwargs.resolution}')
+    print(f'Dataset labels:                     {c.training_set_kwargs.use_labels}')
+    print(f'Dataset x-flips:                     {c.training_set_kwargs.xflip}')
 
-    print(f'Experiment id for StyleGAN2-ADA {c.projector_kwargs.experiment}')
-    print(f'Num steps:                  {c.projector_kwargs.num_steps}')
-    print(f'Normalize per channel:      {c.projector_kwargs.save_final_projection}')
+    print(f'Experiment id for StyleGAN2-ADA     {c.projector_kwargs.experiment}')
+    print(f'Num steps:                          {c.projector_kwargs.num_steps}')
+    print(f'Num steps before early stopping:    {c.projector_kwargs.early_stopping}')
+    print(f'Normalize per channel:              {c.projector_kwargs.save_final_projection}')
     print()
 
 
@@ -187,6 +188,7 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 # Required
 @click.option('--data',                         help='Target image dataset to project to', metavar='[ZIP|DIR]',     type=str, required=True)
 @click.option('--outdir',                       help='Where to save the results', metavar='DIR',                required=True)
+
 @click.option('--modalities',                   help="Modalities for StyleGAN",   metavar="STRING",             type=str, default="MR_nonrigid_CT,MR_MR_T2")
 @click.option('--dataset',                      help="Dataset name",   metavar="STRING",                        type=str, default="Pelvis_2.1")
 @click.option('--split',                        help="Validation split",   metavar="STRING",                    type=str, default="train")
@@ -203,13 +205,16 @@ def ger_outdir_model_path(outdir, outdir_model, c):
 # Required
 @click.option('--experiment',                   help='Experiment run id to take from the results', type=str, required=True)
 @click.option('--network_pkl',                  help='Network pickle filename or Metric filename', type=str, required=True)
+
 @click.option('--target_fname',                 help='Path to image for test experiment',  metavar='DIR', default=None, show_default=True)
-@click.option('--num-steps',                    help='Number of optimization steps', type=int, default=1000, show_default=True)
+@click.option('--num-steps',                    help='Number of optimization steps', type=int, default=500, show_default=True)
+@click.option('--early_stopping',               help='Number of steps before early stopping steps',  type=click.IntRange(min=50, max=500), default=100, show_default=True) # note the minimum early stopping steps must not be too small as the optimization algorithm has a ramping up and ramping down schedule for learning rate
+
 @click.option('--w_lpips',                      help='Weight of lpips loss', type=float, default=1.0, show_default=True)
-@click.option('--w_pix',                        help='Weight of recontruction loss', type=float, default=0, show_default=True)
-@click.option('--save_video',                   help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
+@click.option('--w_pix',                        help='Weight of recontruction loss', type=float, default=1e-4, show_default=True)
+@click.option('--save_video',                   help='Save an mp4 video of optimization progress', type=bool, default=False, show_default=True)
 @click.option('--save_final_projection',         help='Save the final results of projection', type=bool, default=True, show_default=True)
-@click.option('--save_optimization_history',    help='Save the history of optimization process', type=bool, default=True, show_default=True)
+@click.option('--save_optimization_history',    help='Save the history of optimization process', type=bool, default=False, show_default=True)
 def main(**kwargs):
 
     # Initialize config.
@@ -234,6 +239,7 @@ def main(**kwargs):
     c.projector_kwargs.network_pkl = opts.network_pkl
     c.projector_kwargs.target_fname = opts.target_fname
     c.projector_kwargs.num_steps = opts.num_steps
+    c.projector_kwargs.early_stopping = opts.early_stopping
     c.projector_kwargs.w_lpips = opts.w_lpips
     c.projector_kwargs.w_pix = opts.w_pix
     c.projector_kwargs.save_video = opts.save_video

@@ -172,8 +172,8 @@ def parse_separated_list_comma(l):
 @click.option('--xint_max',     help='Max integer translation, relative to image dimension',    type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
 @click.option('--rotate_max',   help='Max rotation in degree',                                  type=click.IntRange(min=0, max=360), default=3, show_default=True)
 @click.option('--xfrac_std',    help='Log2 standard deviation of fractional translation',       type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
-@click.option('--scale_std',    help='Log2 standard deviation of isotropic scaling.',           type=click.FloatRange(min=0, max=1), default=0.1, show_default=True)
-@click.option('--aniso_std',    help='Log2 standard deviation of anisotropic scaling',          type=click.FloatRange(min=0, max=1), default=0.1, show_default=True)
+@click.option('--scale_std',    help='Log2 standard deviation of isotropic scaling.',           type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
+@click.option('--aniso_std',    help='Log2 standard deviation of anisotropic scaling',          type=click.FloatRange(min=0, max=1), default=0.05, show_default=True)
 @click.option('--allow_aug_debug_print', help='Print the augmention results', type=bool, default=False, show_default=True)
 # CUSTOMIZING END
 @click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
@@ -310,6 +310,8 @@ def main(**kwargs):
         c.augment_kwargs.xint_max = opts.xint_max
         c.augment_kwargs.rotate_max = opts.rotate_max / 360 # the AugmentPipe accepts float rotation maximum values from 0 (rotation disabled) to 1 (full circle)
         c.augment_kwargs.xfrac_std = opts.xfrac_std
+        c.augment_kwargs.scale_std = opts.scale_std
+        c.augment_kwargs.aniso_std = opts.aniso_std
         if opts.aug == 'ada':
             c.ada_target = opts.target
             #c.ada_kimg = opts.ada_kimg # added

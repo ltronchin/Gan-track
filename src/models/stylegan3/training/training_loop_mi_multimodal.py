@@ -93,7 +93,7 @@ def setup_snapshot_image_grid(training_set, modalities, random_seed=0):
 
     # CUSTOMIZING START
     # Load data.
-    images, labels = zip(*[training_set[i] for i in grid_indices])
+    images, labels, _ = zip(*[training_set[i] for i in grid_indices])
     images = convert_to_grayscale(images, hi=255.0, low=0.0)
     return (gw, gh), images, np.stack(labels)
     # CUSTOMIZING END
@@ -309,8 +309,8 @@ def training_loop(
 
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
-            phase_real_img, phase_real_c = next(training_set_iterator)
             # CUSTOMIZATION START
+            phase_real_img, phase_real_c, _ = next(training_set_iterator) # phase_real_img, phase_real_c, fname
             #if random.uniform(0, 1) > 0.9:
             # visualize_batch(phase_real_img, batch_size=batch_size,  n_img=16)
             # CUSTOMIZATION END

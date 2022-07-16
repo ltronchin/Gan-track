@@ -104,7 +104,7 @@ class Dataset(torch.utils.data.Dataset):
         return self._raw_idx.size
 
     def __getitem__(self, idx):
-        image = self._load_raw_image(self._raw_idx[idx]) # function from the dataset ImageFolderDataset
+        image, fname_image = self._load_raw_image(self._raw_idx[idx]) # function from the dataset ImageFolderDataset
         assert isinstance(image, np.ndarray)
         assert list(image.shape) == self.image_shape
         # CUSTOMIZING START
@@ -113,7 +113,7 @@ class Dataset(torch.utils.data.Dataset):
         if self._xflip[idx]:
             assert image.ndim == 3 # CHW
             image = image[:, :, ::-1] # HERE THE x_flip is applied! The images is MIRRORED (left-to-right)
-        return image.copy(), self.get_label(idx)
+        return image.copy(), self.get_label(idx), fname_image
 
     def get_label(self, idx):
         label = self._get_raw_labels()[self._raw_idx[idx]]
@@ -214,7 +214,9 @@ class CustomImageFolderDataset(Dataset):
             raise IOError("No image files found in the specified path")
 
         name = os.path.splitext(os.path.basename(self._path))[0]
-        raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0).shape)
+        # CUSTOMIZING START
+        raw_shape = [len(self._image_fnames)] + list(self._load_raw_image(0)[0].shape) # added [0] to select the image from the list [img, img_fname]
+        # CUSTOMIZING END
         if resolution is not None and (raw_shape[2] != resolution or raw_shape[3] != resolution):
             raise IOError("Image files do not match the specified resolution")
         super().__init__(name=name, raw_shape=raw_shape, **super_kwargs)
@@ -259,7 +261,7 @@ class CustomImageFolderDataset(Dataset):
             x = p[_modality]
             x = x.astype("float32")
             out_image[i, :, :] = x
-        return out_image # CHW
+        return out_image, fname # CHW
 
     def _load_raw_labels(self):
         fname = "dataset.json"

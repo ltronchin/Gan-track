@@ -12,6 +12,7 @@ import requests
 import collections
 import sys
 import shutil
+import ntpath
 
 from typing import Any, Union, List, Tuple
 
@@ -235,6 +236,38 @@ def seed_all(seed): # for deterministic behaviour
     random.seed(seed) # Set python built-in pseudo-random generator at a fixed value
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+# ----------------------------- PATH UTILS -----------------------------
+
+def split_dos_path_into_components(path):
+    folders = []
+    while 1:
+        path, folder = os.path.split(path)
+
+        if folder != "":
+            folders.append(folder)
+        else:
+            if path != "":
+                folders.append(path)
+
+            break
+
+    folders.reverse()
+    return folders
+
+def get_parent_dir(path):
+    return os.path.abspath(os.path.join(path, os.pardir))
+
+
+def get_filename(path):
+    head, tail = ntpath.split(path)
+    return tail or ntpath.basename(head)
+
+
+def get_filename_without_extension(path):
+    filename = get_filename(path)
+    return os.path.splitext(filename)[0]
+
 
 def create_dir(outdir): # function to create directory
     if not os.path.exists(outdir):

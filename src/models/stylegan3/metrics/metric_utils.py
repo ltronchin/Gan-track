@@ -235,9 +235,8 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, mode_
 
     # Main loop.
     item_subset = [(i * opts.num_gpus + opts.rank) % num_items for i in range((num_items - 1) // opts.num_gpus + 1)]
-    for images, _labels in torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset, batch_size=batch_size, **data_loader_kwargs):
-
-        # CUSTOMIZING START  -- take care of different scale of the input
+    # CUSTOMIZING START
+    for images, _labels, _ in torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset, batch_size=batch_size, **data_loader_kwargs):
         if images.max() != 255:
             temp = []
             for img in images:

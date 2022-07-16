@@ -79,7 +79,9 @@ def setup_snapshot_image_grid(training_set, random_seed=0):
             label_groups[label] = [indices[(i + gw) % len(indices)] for i in range(len(indices))]
 
     # Load data.
-    images, labels = zip(*[training_set[i] for i in grid_indices])
+    # CUSTOMIZING START
+    images, labels, _ = zip(*[training_set[i] for i in grid_indices])
+    # CUSTOMIZING STOP
     return (gw, gh), np.stack(images), np.stack(labels)
 
 #----------------------------------------------------------------------------
@@ -277,8 +279,8 @@ def training_loop(
 
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
-            phase_real_img, phase_real_c = next(training_set_iterator)
             # CUSTOMIZING START
+            phase_real_img, phase_real_c, _ = next(training_set_iterator)
             if training_set_kwargs.dtype == 'uint8':
                 phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
             else:

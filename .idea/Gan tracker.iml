@@ -13,7 +13,7 @@
       <excludeFolder url="file://$MODULE_DIR$/src/models/pytorch-CycleGAN-and-pix2pix" />
       <excludeFolder url="file://$MODULE_DIR$/temp" />
     </content>
-    <orderEntry type="jdk" jdkName="Remote Python 3.9.12 (sftp://lorenzo@130.239.99.38:1022/home/lorenzo/miniconda3/envs/stylegan3/bin/python3)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Remote Python 3.9.12 (sftp://lorenzo@130.239.99.38:1023/home/lorenzo/miniconda3/envs/stylegan3/bin/python3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TemplatesService">

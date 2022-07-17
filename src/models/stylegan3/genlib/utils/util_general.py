@@ -12,8 +12,9 @@ import requests
 import collections
 import sys
 import shutil
+import ntpath
 
-from typing import Any, Union, List, Tuple
+from typing import Any, Optional, Tuple, Union, List
 
 class iid_class:
     def __init__(self, iid_label=None):
@@ -236,6 +237,38 @@ def seed_all(seed): # for deterministic behaviour
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+# ----------------------------- PATH UTILS -----------------------------
+
+def split_dos_path_into_components(path):
+    folders = []
+    while 1:
+        path, folder = os.path.split(path)
+
+        if folder != "":
+            folders.append(folder)
+        else:
+            if path != "":
+                folders.append(path)
+
+            break
+
+    folders.reverse()
+    return folders
+
+def get_parent_dir(path):
+    return os.path.abspath(os.path.join(path, os.pardir))
+
+
+def get_filename(path):
+    head, tail = ntpath.split(path)
+    return tail or ntpath.basename(head)
+
+
+def get_filename_without_extension(path):
+    filename = get_filename(path)
+    return os.path.splitext(filename)[0]
+
+
 def create_dir(outdir): # function to create directory
     if not os.path.exists(outdir):
         Path(outdir).mkdir(parents=True, exist_ok=True) # with parents 'True' creates all tree/nested folder
@@ -331,3 +364,23 @@ def get_next_run_id_local(run_dir_root: str, module_name: str) -> int:
 
 def check_empty_directory(target_dir):
     pass
+
+
+def maybe_min(a: int, b: Optional[int]) -> int:
+    if b is not None:
+        return min(a, b)
+    return a
+
+def parse_comma_separated_list(s):
+    if isinstance(s, list):
+        return s
+    if s is None or s.lower() == 'none' or s == '':
+        return []
+    return s.split(',')
+
+def parse_separated_list_comma(l):
+    if isinstance(l, str):
+        return l
+    if len(l) == 0:
+        return ''
+    return ','.join(l)

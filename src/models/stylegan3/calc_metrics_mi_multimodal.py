@@ -50,7 +50,7 @@ def subprocess_fn(rank, args, temp_dir):
         custom_ops.verbosity = 'none'
 
     # Configure torch.
-    device =  torch.device('cuda:1') # torch.device('cuda', rank) # todo remove cuda:1
+    device = torch.device('cuda', rank) # torch.device('cuda:1') # torch.device('cuda', rank)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     conv2d_gradfix.enabled = True

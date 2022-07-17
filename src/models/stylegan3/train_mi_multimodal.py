@@ -347,7 +347,7 @@ def main(**kwargs):
     opts.outdir = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{dataset_name:s}", f"{s_modalities:s}")
     # Description string.
     #desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-ada_kimg_{c.ada_kimg}-aug_opts_{s_aug_opts}"
-    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}--aug_{opts.aug}-aug_opts_{s_aug_opts}"
+    desc = f"{dataset_name:s}-{opts.cfg:s}-gpus_{c.num_gpus:d}-batch_{c.batch_size:d}-gamma_{c.loss_kwargs.r1_gamma:g}-dtype_{opts.dtype}-split_{opts.split}-modalities_{s_modalities:s}-aug_{opts.aug}-aug_opts_{s_aug_opts}"
     if opts.desc is not None:
         desc += f'-{opts.desc}'
     # CUSTOMIZING END

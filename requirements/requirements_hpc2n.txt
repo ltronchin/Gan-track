@@ -135,4 +135,9 @@ webencodings==0.5.1
 wheel==0.36.2
 xlrd==2.0.1
 zipp==3.4.1
+
 openpyxl
+dicom2nifti
+nilearn
+SimpleITK
+opencv-python

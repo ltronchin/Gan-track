@@ -893,22 +893,26 @@ def process_tiff(source:                str,
         shutil.rmtree(temp)
     path_utils.make_dir(temp, is_printing=False)
 
-    # Upload patients info.
-    data_raw = pd.read_excel(os.path.join(source_interim, f'patients_info_{dataset}.xlsx'), index_col=0)
-    id_patients_slice = pd.Series([row.split(os.path.sep)[1].split('.tif')[0] for row in data_raw['image']])
-    id_patients = pd.Series([idp.split('_')[0] for idp in id_patients_slice.iloc])
+    # Upload raw_data.
+    #data_raw = pd.read_excel(os.path.join(source_interim, f'patients_info_{dataset}.xlsx'), index_col=False)
+    #slices_raw = list(itertools.chain(*[glob.glob(os.path.join(source, str(id_patient), 'images', "*")) for id_patient in data_raw['ID'].values])) # slices_raw = glob.glob(os.path.join(source, '*', 'images', "*"))
+    #slices_raw = pd.Series([x.split(sep='/')[-1].split(sep='.')[0] for x in slices_raw])
 
     # Upload box file.
-    box_data = pd.read_excel(source_box)
-    id_patients_slice_box = box_data['img ID']
+    #box_data = pd.read_excel(source_box)
+    #slices_box = box_data['img ID']
 
-    id_patients_slice_lung = pd.Series(np.intersect1d(id_patients_slice, id_patients_slice_box))
+    #slices = pd.Series(np.intersect1d(slices_raw, slices_box))
 
-    print(f'Number of images: {len(id_patients_slice_lung)}')
-    print(f'Number of patients: {len(np.unique(id_patients))}')
+    # Upload raw_data.
+    data_raw = pd.read_csv(os.path.join(source_interim, 'bootstrap', 'folds', 'all.txt'), sep=" ")
+    slices = pd.Series([path_utils.get_filename_without_extension(x) for x in data_raw['img']])
+    patients = np.unique([path_utils.split_dos_path_into_components(x)[0] for x in data_raw['img']])
+    print(f'Number of images: {len(slices)}')
+    print(f"Number of patients: {len(patients)}")
     print('Create dataset')
     dataset = util_medical_data.ImgDatasetPreparation(
-        data=id_patients_slice_lung, data_dir=source, resolution=resolution, data_dir_box=source_box, box_value=box_value, clip=clip, scale=scale, convert_to_uint8=convert_to_uint8, scale_by_255=scale_by_255
+        data=slices, data_dir=source, resolution=resolution, data_dir_box=source_box, box_value=box_value, clip=clip, scale=scale, convert_to_uint8=convert_to_uint8, scale_by_255=scale_by_255
     )
     print('Initialize dataloader')
     print()

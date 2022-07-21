@@ -13,8 +13,8 @@ data:
     - death
     - alive
 
-  source_dataset: claro_retrospettivo
-  processed_dataset: claro_retrospettivo
+  source_dataset: claro
+  processed_dataset: claro
   data_dir: ./data/data_raw
   interim_dir: ./data/interim
   reports_dir: ./reports/

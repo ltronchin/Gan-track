@@ -825,14 +825,14 @@ def write_to_zip(
 
             s = {"sample_patients": sample_patients, "train": train_patients, "val": val_patients,  "test": test_patients}
             # Save the training/validation/test split
-            with open(os.path.join(parent_dir, "train_val_test_ids", f"{basename}.json"), 'w') as f:
+            with open(os.path.join(parent_dir, "train_val_test_ids", f"{fbasename}.json"), 'w') as f:
                 json.dump(s, f, ensure_ascii=False, indent=4)  # save as json
             io_utils.write_pickle(s, split_path)  # save as pickle
         else:
             raise NotImplementedError(f"{opts.dataset:s} is not implemented")
 
         # Init zip file.
-        out_path = os.path.join(parent_dir, f"{basename}.zip",)
+        out_path = os.path.join(parent_dir, f"{fbasename}.zip",)
 
         # Write to zip
         with zipfile.ZipFile(out_path, "w") as zipObj:

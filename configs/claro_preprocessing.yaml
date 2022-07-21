@@ -1,5 +1,4 @@
 seed: 42
-id_exp:
 
 device:
   device_type: gpu
@@ -7,27 +6,44 @@ device:
   gpu_num_workers: 32
 
 data:
-  image_size: 256
+  resolution: 256
   channel: 1
+
+  classes:
+    - death
+    - alive
+
   source_dataset: claro_retrospettivo
   processed_dataset: claro_retrospettivo
-  iid_classes: claro_retrospettivo
-  ood_classes: claro_prospettivo
-
   data_dir: ./data/data_raw
   interim_dir: ./data/interim
-  box_file: ./data/interim/claro/data.xlsx
-  box_value: max_box #box
+  reports_dir: ./reports/
 
-  clip:
-    min: -1000
-    max: 1000
+  validation:
+    name: bootstrap
+    split:
+      "train": 0.8
+      "val": 0.1
+      "test": 0.1
+    n_exp: 5
 
-  scale:
-    min: -1000
-    max: 1000
+  modes:
+    CT:
+      clip:
+        min: -1000
+        max: 1000
+      scale:
+        min: -1000
+        max: 1000
+      upper_percentile:
+      lower_percentile:
 
-  convert_to_uint8: True
+  options:
+    apply_box: True
+    box_value: max_box # box
+    transpose_img: False # Transpose the 2D slice swapping the axis, defaul True
+    convert_to_uint8: False
+    scale_by_255: True
 
 network:
   model_name: 'stylegan2-ada'

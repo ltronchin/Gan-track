@@ -19,12 +19,12 @@ import zipfile
 from pathlib import Path
 from typing import Any, Optional, Tuple, Union
 import click
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
 import PIL.Image
 from PIL import Image
-
 
 import yaml
 from src.utils import util_general
@@ -39,12 +39,14 @@ import random
 import scipy
 import nilearn
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 
 import src.engine.utils.path_utils as path_utils
 import src.engine.utils.utils as utils
 import src.engine.utils.volume as volume_utils
 import src.engine.utils.io_utils as io_utils
 
+from src.utils import util_medical_data
 #----------------------------------------------------------------------------
 
 def sanity_check_fllename(data_dir):
@@ -585,7 +587,7 @@ def  convert_dataset_mi(
         hi: float =255.0,
         low: float =0.0,
         is_overwrite: bool = False,
-        is_visualize=False
+        is_visualize: bool =False
 ):
 
     def fix_orientation(x):
@@ -749,9 +751,14 @@ def split_list_cross_validation(input_list, n_fold=5, shuffle_list=True, is_test
         print(fold_list)
     return fold_list
 
-def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, split=None):
-    if split is None:
-        split = {"train": 0.8, "val": 0.2, "test": 0}
+def write_to_zip(
+        source:                     str,
+        dest:                       str = None,
+        dataset:                    str = "Pelvis_2.1",
+        max_patients:               int = 100000,
+        validation_method:          str ='hold_out',
+        **kwargs
+):
 
     def add_to_zip(zipObj, patient, split):
         files = glob.glob(os.path.join(patient, "*.pickle"))
@@ -770,63 +777,205 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 
     # Get all patients in temp folder.
     patients = glob.glob(os.path.join(source, "*"))
-    # Get only the names of patients
+    # Get only the names of patients.
     patients = [path_utils.get_filename_without_extension(patient) for patient in patients]
     assert len(patients) > 0
 
+    # Create a basename depending on <dataset>, <num_patient>, <validation_method>, <validation_split>
     max_patients = min(max_patients, len(patients))
+    n_exp = kwargs['n_exp']
+    split = kwargs['split']
     train_split, val_split, test_split = split["train"], split["val"], split["test"]
-    basename = f"{dataset}-num-{max_patients:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
+    basename = {
+        fold: f"{dataset}-num-{max_patients:d}_val-{validation_method}_exps-{n_exp:d}_fold-{fold:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}" for fold in range(n_exp)
+    }
 
-    # Load split dataset if exist, if not make a new one.
-    if dest is None:
-        parent_dir = path_utils.get_parent_dir(source)
-    else:
-        parent_dir = dest
+    for fold, fbasename in basename.items():
+        # Load split dataset if exist, if not make a new one.
+        if dest is None:
+            parent_dir = path_utils.get_parent_dir(source)
+        else:
+            parent_dir = dest
+        split_path = os.path.join(parent_dir, "train_val_test_ids", f"{fbasename}.pickle")
+        path_utils.make_dir(path_utils.get_parent_dir(split_path), is_printing=False)
 
-    split_path = os.path.join(parent_dir, "train_val_test_ids", f"{basename}.pickle")
-    path_utils.make_dir(path_utils.get_parent_dir(split_path), is_printing=False)
+        if os.path.exists(split_path):
+            print(f"Load saved split, name: {split_path}")
+            s = io_utils.read_pickle(split_path)
+            train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
+        elif validation_method == 'bootstrap':  #todo Implement bootstrap val method
+            pass
+        elif validation_method == 'hold_out':
+            print(f"Create new split without considering the label distribution. See the script 'create_files.py' otherwise.")
+            print('')
 
-    if os.path.exists(split_path):
-        print(f"Load saved split, name: {split_path}")
-        s = io_utils.read_pickle(split_path)
-        train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
-    else:
-        print(f"Create new split without considering the label distribution.")
-        train_split, val_split, test_split = (
-            train_split / (train_split + val_split + test_split),
-            val_split / (train_split + val_split + test_split),
-            test_split / (train_split + val_split + test_split),
+            train_split, val_split, test_split = (
+                train_split / (train_split + val_split + test_split),
+                val_split / (train_split + val_split + test_split),
+                test_split / (train_split + val_split + test_split),
+            )
+            # Shuffle and take max_patients samples from dataset.
+            patients = sorted(patients)
+            random.Random(max_patients).shuffle(
+                patients)  # comment this line if you don't know to change the order fo the patients across the experiments
+            sample_patients = patients[:max_patients]
+
+            train_patients, val_test_patients = split_list(sample_patients, train_split)
+            val_patients, test_patients = split_list(val_test_patients, val_split / (val_split + test_split))
+
+            s = {"sample_patients": sample_patients, "train": train_patients, "val": val_patients,  "test": test_patients}
+            # Save the training/validation/test split
+            with open(os.path.join(parent_dir, "train_val_test_ids", f"{basename}.json"), 'w') as f:
+                json.dump(s, f, ensure_ascii=False, indent=4)  # save as json
+            io_utils.write_pickle(s, split_path)  # save as pickle
+        else:
+            raise NotImplementedError(f"{opts.dataset:s} is not implemented")
+
+        # Init zip file.
+        out_path = os.path.join(parent_dir, f"{basename}.zip",)
+
+        # Write to zip
+        with zipfile.ZipFile(out_path, "w") as zipObj:
+            for patient in train_patients:
+                patient_path = os.path.join(source, patient)
+                add_to_zip(zipObj, patient_path, "train")
+            for patient in val_patients:
+                patient_path = os.path.join(source, patient)
+                add_to_zip(zipObj, patient_path, "val")
+            for patient in test_patients:
+                patient_path = os.path.join(source, patient)
+                add_to_zip(zipObj, patient_path, "test")
+
+# ----------------------------------------------------------------------------
+# CLARO PROCESSING
+# ----------------------------------------------------------------------------
+
+def to_pickle():
+    fdata = {}
+    for name_modality in name_modalities:
+        fdata[name_modality] = nib.load(os.path.join(parent_dir, f"{name_modality}.nii.gz")).get_fdata()
+
+    depth = nib.load(modalities[0]).shape[-1]  # Save the number of Slices/Channel
+    for d in range(depth):
+        img = {}  # dictionary of modalities.
+        for name_modality in name_modalities:
+            img[name_modality] = fdata[name_modality][:, :, d]  # based on depth index (d): 0000->0128
+        yield dict(
+            img=img, label=labels.get(arch_fname), name=f"{patient_name:s}_{d:05d}",  folder_name=f"{patient_name:s}", depth_index=d, total_depth=depth
         )
 
-        # Shuffle and take max_patients samples from dataset.
-        patients = sorted(patients)
-        random.Random(max_patients).shuffle(patients) # comment this line if you don't know to change the order fo the patients across the experiments
-        sample_patients = patients[:max_patients]
+def process_tiff(source:                str,
+                 source_interim:        str,
+                 source_box:            str,
+                 dest:                  str,
+                 dataset:               str,
+                 resolution:            int,
+                 box_value:             str,
+                 clip:                  {},
+                 scale:                 {},
+                 convert_to_uint8:      bool,
+                 scale_by_255:          bool,
+                 mode:                  list = None,
+                 is_overwrite:          bool = True,
+                 is_visualize:          bool = False,
+                 is_sanity_check:       bool = True,
+                 dataset_attrs:         list = None):
 
-        train_patients, val_test_patients = split_list(sample_patients, train_split)
-        val_patients, test_patients = split_list(val_test_patients, val_split / (val_split + test_split))
+    if mode is None:
+        mode = ['CT']
+    assert len(mode) == 1
 
-        s = {"sample_patients":sample_patients,  "train": train_patients, "val": val_patients, "test": test_patients}
-        # Save the training/validation/test split
-        with open(os.path.join(parent_dir, "train_val_test_ids", f"{basename}.json"), 'w') as f:
-            json.dump(s, f, ensure_ascii=False, indent=4) # save as json
-        io_utils.write_pickle(s, split_path) # save as pickle
+    # Create a temp folder.
+    temp = os.path.join(dest, "temp")
 
-    # Init zip file.
-    out_path = os.path.join(parent_dir, f"{basename}.zip",)
+    if os.path.isdir(temp) and is_overwrite:
+        print(f"Removing {temp}")
+        shutil.rmtree(temp)
+    path_utils.make_dir(temp, is_printing=False)
 
-    # Write to zip
-    with zipfile.ZipFile(out_path, "w") as zipObj:
-        for patient in train_patients:
-            patient_path = os.path.join(source, patient)
-            add_to_zip(zipObj, patient_path, "train")
-        for patient in val_patients:
-            patient_path = os.path.join(source, patient)
-            add_to_zip(zipObj, patient_path, "val")
-        for patient in test_patients:
-            patient_path = os.path.join(source, patient)
-            add_to_zip(zipObj, patient_path, "test")
+    # Upload patients info.
+    data_raw = pd.read_excel(os.path.join(source_interim, f'patients_info_{dataset}.xlsx'), index_col=0)
+    id_patients_slice = pd.Series([row.split(os.path.sep)[1].split('.tif')[0] for row in data_raw['image']])
+    id_patients = pd.Series([idp.split('_')[0] for idp in id_patients_slice.iloc])
+
+    # Upload box file.
+    box_data = pd.read_excel(source_box)
+    id_patients_slice_box = box_data['img ID']
+
+    id_patients_slice_lung = pd.Series(np.intersect1d(id_patients_slice, id_patients_slice_box))
+
+    print(f'Number of images: {len(id_patients_slice_lung)}')
+    print(f'Number of patients: {len(np.unique(id_patients))}')
+    print('Create dataset')
+    dataset = util_medical_data.ImgDatasetPreparation(
+        data=id_patients_slice_lung, data_dir=source, resolution=resolution, data_dir_box=source_box, box_value=box_value, clip=clip, scale=scale, convert_to_uint8=convert_to_uint8, scale_by_255=scale_by_255
+    )
+    print('Initialize dataloader')
+    print()
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, drop_last=False)
+
+    for x, id_patient, id_slice in dataloader:  # Iterate over the batches of the dataset
+        # Save img a modes dict.
+        img = {
+            mode[0]: x.detach().cpu().numpy()[0][0]
+        }  # dictionary.
+
+        # id_patient.
+        id_patient = id_patient[0]
+        # id_slice.
+        id_slice = id_slice[0]
+
+        # Format path temp/<id_patient>/<id_patient>_<id_slice>
+        archive_fname = f"{id_patient}/{id_patient}_{int(id_slice):05d}.pickle"
+        print(archive_fname)
+        path_utils.make_dir(os.path.join(temp, id_patient), is_printing=False)
+        out_path = os.path.join(temp, archive_fname)
+
+        if not is_overwrite and os.path.exists(out_path):
+            continue
+
+        # Transform may drop images.
+        if img is None:
+            print("Discarded image!")
+            print(f"Check: {archive_fname}")
+            break
+
+        # Running visualization.
+        if is_visualize:
+            if random.uniform(0, 1) > 0.9:
+
+                plt.imshow(img[mode[0]], cmap="gray", vmin=0, vmax=255)
+                plt.axis('off')
+                plt.show()
+
+        # Sanity check.
+        if is_sanity_check:
+            sanity_check_dir = os.path.join(dest, 'sanity_check', id_patient)
+            path_utils.make_dir(sanity_check_dir, is_printing=False)
+            im = Image.fromarray(img[mode[0]] / 255)
+            im.save(os.path.join(sanity_check_dir, f"{id_patient}_{int(id_slice):05d}.tif"), 'tiff', compress_level=0, optimize=False)
+        modalities = sorted(img.keys())
+        cur_image_attrs = {
+            "width": img[modalities[0]].shape[1],   "height": img[modalities[0]].shape[0], "modalities": modalities, "dtype": img[modalities[0]].dtype
+        }
+        if dataset_attrs is None: # if is None, stylegan2-ada preprocessing
+            dataset_attrs = cur_image_attrs
+            width = dataset_attrs["width"]
+            height = dataset_attrs["height"]
+            img_dtype = dataset_attrs["dtype"]
+            if width != height:
+                error(f"Image dimensions after scale and crop are required to be square.  Got {width}x{height}")
+            if width != 2 ** int(np.floor(np.log2(width))):
+                error("Image width/height after scale and crop are required to be power-of-two")
+            if img_dtype != 'float64':
+                error("Medical Stylegan2-ada? I want float data!")
+        elif dataset_attrs != cur_image_attrs:
+            err = [f"  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}" for k in  dataset_attrs.keys()]  # pylint: disable=unsubscriptable-object
+            error(f"Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n" + "\n".join(err))
+
+        # Save to pickle.
+        io_utils.write_pickle(img, out_path)
+
 
 # ----------------------------------------------------------------------------
 @click.command()
@@ -834,27 +983,26 @@ def write_to_zip(source: str, dest=None, dataset="Pelvis_2.1", max_patients=30, 
 @click.option('--configuration_file', help='Path to configuration file', required=True, metavar='PATH')
 @click.option('--data_dir', help='Directory for input dataset', required=True, metavar='PATH')
 @click.option('--data_dir_mask', help='Directory for mask dataset', metavar='PATH')
+@click.option('--data_dir_box', help='Directory for bounding box file', metavar='PATH')
 
 @click.option('--interim_dir', help='Output directory for output dataset', required=True, metavar='PATH')
 @click.option('--reports_dir', help='Output directory for reports', required=True, metavar='PATH')
 @click.option('--dataset', help='Name of the input dataset', required=True, type=str, default='Pelvis_2.1')
-@click.option('--resolution', help='Resolution of the processed images', required=True, type=int, default=256)
-@click.option('--max_patients', help='Number of patients to preprocess', required=True, type=int, default=100000)
-@click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'mask_nifti', 'snap_pickle', 'snap_zip']), default='process_dicom_2_nifti', show_default=True)
-@click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
-@click.option('--validation_split', help='Validation split', required=True, type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
-@click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', required=True, type=int, default=10)
-@click.option('--apply_mask', help='Apply to MR and CT the boolean mask computed using CT mode', required=True, type=bool, default=False)
-@click.option('--transpose_img', help='Transpose the 2D slice swapping the axis', required=True, type=bool, default=True)
-def prepare_Pelvis_2_1(**kwargs):
-
+#@click.option('--resolution', help='Resolution of the processed images', type=int, default=256)
+@click.option('--max_patients', help='Number of patients to preprocess', type=int, default=100000)
+@click.option('--processing_step', help='Processing step', type=click.Choice(['process_dicom_2_nifti', 'process_nifti_resized', 'process_nifti_normalized', 'mask_nifti', 'snap_pickle', 'snap_zip', 'process_tiff']), required=True)
+#@click.option('--validation_method', help='Validation method', required=True, type=str, default='hold_out')
+#@click.option('--validation_split', help='Validation split', type=dict, default={'train': 0.7, 'val': 0.2, 'test': 0.1})
+#@click.option('--pop_range', help='Number of slice to drop and the beginning/end od the stack', type=int, default=10)
+#@click.option('--apply_mask', help='Apply to MR and CT the boolean mask computed using CT mode', type=bool, default=False)
+#@click.option('--transpose_img', help='Transpose the 2D slice swapping the axis', type=bool, default=True)
+def main(**kwargs):
     opts = EasyDict(**kwargs)
 
     # Configuration file
     print("Upload configuration file")
     with open(opts.configuration_file) as file:
         cfg = yaml.load(file, Loader=yaml.FullLoader)
-    modes_args = cfg['data']['modes']
 
     # Submit run:
     print("Submit run")
@@ -888,43 +1036,143 @@ def prepare_Pelvis_2_1(**kwargs):
     print('Create file and directory')
     data_dir = opts.data_dir
     interim_dir = os.path.join(opts.interim_dir, opts.dataset)
-    reports_dir = os.path.join(opts.reports_dir, opts.dataset)
+    reports_dir = os.path.join(opts.reports_dir,  opts.dataset)
     path_utils.make_dir(reports_dir)
+
+    if 'claro' in opts.dataset:
+        data_dir_box = opts.data_dir_box
+        prepare_claro(
+            data_dir, interim_dir, reports_dir, data_dir_box, cfg=cfg, opts=opts
+        )
+    elif opts.dataset == 'Pelvis_2.1':
+        data_dir_mask = opts.data_dir_mask
+        prepare_Pelvis_2_1(
+            data_dir, interim_dir, reports_dir, data_dir_mask, cfg=cfg, opts=opts
+        )
+    else:
+        raise NotImplementedError(f"{opts.dataset:s} is not implemented")
+    print("May be the force with you!")
+
+def prepare_claro(data_dir, interim_dir, reports_dir, data_dir_box, cfg, opts):
+
+    # Inherit configuration and options file.
+    # From config.
+    resolution = cfg['data']['resolution']
+    modes_args = cfg['data']['modes']
+    apply_box =  cfg['data']['options']['apply_box']
+    box_value = cfg['data']['options']['box_value']
+    transpose_img = cfg['data']['options']['transpose_img']
+    convert_to_uint8 = cfg['data']['options']['convert_to_uint8']
+    scale_by_255 = cfg['data']['options']['scale_by_255']
+    validation_method =  cfg['data']['validation']['name']
+    validation_split = cfg['data']['validation']['split']
+    n_exp = cfg['data']['validation']['n_exp']
+    # From options.
+    dataset = opts.dataset
+    max_patients = opts.max_patients
+    processing_step = opts.processing_step
 
     # Useful print
     print()
     print('Training options:')
     print()
     print(f'Data directory:      {data_dir}')
-    if opts.data_dir_mask is not None:
-        print(f'Data mask directory:    {opts.data_dir_mask}')
+    if data_dir_box is not None:
+        print(f'Data box directory:  {data_dir_box}')
     print(f'Output directory:    {interim_dir}')
     print(f'Report directory:    {reports_dir}')
-    print(f'Dataset resolution:  {opts.resolution}')
+    print(f'Dataset resolution:  {resolution}')
     print(f'Modes list:          {list(modes_args.keys())}')
     print(f'Modes args:          {modes_args}')
-    print(f'Max patients:        {opts.max_patients}')
-    print(f'Processing step:     {opts.processing_step}')
-    print(f'Validation method:   {opts.validation_method}')
-    print(f'Validation split:    {opts.validation_split}')
-    print(f'Apply mask:          {opts.apply_mask}')
-    print(f'Number of slice to drop and the beginning/end od the stack:    {opts.pop_range}')
-    print(f'Transpose the slice [x y] --> [y x]:                           {opts.transpose_img}')
+    print(f'Max patients:        {max_patients}')
+    print(f'Processing step:     {processing_step}')
+    print(f'Validation method:   {validation_method}')
+    print(f'Validation split:    {validation_split}')
+    print(f'Number of fold:      {n_exp}')
+    print(f'Apply mask:          NOT APPLICABLE')
+    print(f'Apply box:           {apply_box}')
+    print(f'Box value:           {box_value}')
+    print(f'Number of slice to drop and the beginning/end od the stack:    NOT APPLICABLE')
+    print(f'Transpose the slice [x y] --> [y x]:                           {transpose_img}')
+    print(f'Convert images to uint8:                                       {convert_to_uint8}')
+    print(f'Scale form [0.0 1.0] to [0.0 255.0]:                           {scale_by_255}')
+    print()
+
+    # Process tiff.
+    if processing_step == 'process_tiff':
+        dest_dir = interim_dir
+        process_tiff(
+            source=data_dir, source_interim=interim_dir, source_box=data_dir_box, dest=dest_dir, dataset=dataset, resolution=resolution,  box_value=box_value, clip=modes_args['CT']['clip'], scale=modes_args['CT']['scale'], convert_to_uint8=convert_to_uint8, scale_by_255=scale_by_255
+        )
+
+    # Save as zip
+    if processing_step == 'snap_zip':
+        dest_dir = interim_dir
+        print(f"\nSave to zip, output folder: {dest_dir}")
+        # Save as zip
+        if processing_step == 'snap_zip':
+            dest_dir = interim_dir
+            print(f"\nSave to zip, output folder: {dest_dir}")
+            write_to_zip(
+                source=os.path.join(data_dir), dest=dest_dir, dataset=dataset, max_patients=max_patients, validation_method=validation_method, n_exp=n_exp, split=validation_split
+            )
+
+def prepare_Pelvis_2_1(data_dir, interim_dir, reports_dir, data_dir_mask, cfg, opts):
+
+    # Inherit configuration and options file.
+    # From config.
+    resolution = cfg['data']['resolution']
+    modes_args = cfg['data']['modes']
+    apply_mask =  cfg['data']['options']['apply_mask']
+    transpose_img = cfg['data']['options']['transpose_img']
+    pop_range = cfg['data']['options']['pop_range']
+    validation_method =  cfg['data']['validation']['name']
+    validation_split = cfg['data']['validation']['split']
+    n_exp = cfg['data']['validation']['n_exp']
+    # From options.
+    dataset = opts.dataset
+    max_patients = opts.max_patients
+    processing_step = opts.processing_step
+
+    # Useful print
+    print()
+    print('Training options:')
+    print()
+    print(f'Data directory:      {data_dir}')
+    if data_dir_mask is not None:
+        print(f'Data mask directory:    {data_dir_mask}')
+    print(f'Output directory:    {interim_dir}')
+    print(f'Report directory:    {reports_dir}')
+    print(f'Dataset resolution:  {resolution}')
+    print(f'Modes list:          {list(modes_args.keys())}')
+    print(f'Modes args:          {modes_args}')
+    print(f'Max patients:        {max_patients}')
+    print(f'Processing step:     {processing_step}')
+    print(f'Validation method:   {validation_method}')
+    print(f'Number of fold:      {n_exp}')
+    print(f'Validation split:    {validation_split}')
+    print(f'Apply mask:          {apply_mask}')
+    print(f'Apply box:           NOT APPLICABLE')
+    print(f'Box value:           NOT APPLICABLE')
+    print(f'Number of slice to drop and the beginning/end od the stack:    {pop_range}')
+    print(f'Transpose the slice [x y] --> [y x]:                           {transpose_img}')
+    print(f'Convert images to uint8:                                        NOT APPLICABLE')
+    print(f'Scale form [0.0 1.0] to [0.0 255.0]:                           True')
     print()
 
     sanity_check_fllename(data_dir=data_dir)
 
-    path = Path(os.path.join(interim_dir, f'info_{opts.dataset}.xlsx'))
+    path = Path(os.path.join(interim_dir, f'info_{dataset}.xlsx'))
     if path.is_file():
         print('The info file of the selected dataset already exists.')
     else:
         print(f'Export statistics.')
         export_statistics(
-            dataset_name=opts.dataset, data_dir=data_dir, reports_dir=interim_dir
+            dataset_name=dataset, data_dir=data_dir, reports_dir=interim_dir
         )
 
     # From dicom to nifti
-    if opts.processing_step == 'process_dicom_2_nifti':
+    if processing_step == 'process_dicom_2_nifti':
         dest_dir = os.path.join(interim_dir, 'nifti_volumes')
         print(f"\nConvert to nifti, output folder: {dest_dir}")
         convert_dicom_2_nifti(
@@ -932,31 +1180,31 @@ def prepare_Pelvis_2_1(**kwargs):
         )
 
     # Resize nifti volume from [original_res, original_res, n_slices] to [res x res x n_slices]
-    if opts.processing_step == 'process_nifti_resized':
-        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}')
-        print(f"\nResize to resolution {opts.resolution}, output folder: {dest_dir}")
+    if processing_step == 'process_nifti_resized':
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{resolution}x{resolution}')
+        print(f"\nResize to resolution {resolution}, output folder: {dest_dir}")
         resize_nifti_folder(
-            source=data_dir, dest=dest_dir, image_shape=(opts.resolution, opts.resolution)
+            source=data_dir, dest=dest_dir, image_shape=(resolution, resolution)
         )
 
     # Normalize each volume
-    if opts.processing_step == 'process_nifti_normalized':
-        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_normalized')
+    if processing_step == 'process_nifti_normalized':
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{resolution}x{resolution}_normalized')
         print(f"\nNormalize each volume, output folder: {dest_dir}")
         normalize_folder(
-            source=data_dir, dest=dest_dir, dataset=opts.dataset, modes_args=cfg['data']['modes']
+            source=data_dir, dest=dest_dir, dataset=dataset, modes_args=modes_args
         )
 
     # Find mask of each volume using CT data
-    if opts.processing_step == 'mask_nifti':
-        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{opts.resolution}x{opts.resolution}_mask')
+    if processing_step == 'mask_nifti':
+        dest_dir = os.path.join(interim_dir, f'nifti_volumes_{resolution}x{resolution}_mask')
         print(f"\nMask each volume using nilearn package, output folder: {dest_dir}")
         find_mask_folder(
-            source=data_dir,  dest=dest_dir,   dataset=opts.dataset,
+            source=data_dir,  dest=dest_dir,  dataset=dataset,
          )
 
     # Write to pickle
-    if opts.processing_step == 'snap_pickle':
+    if processing_step == 'snap_pickle':
         dest_dir = interim_dir
         print(f"\nSave to pickle, output_folder: {dest_dir}")
         print(f"-----")
@@ -964,21 +1212,18 @@ def prepare_Pelvis_2_1(**kwargs):
         print("Each .pkl file contains all the modes associated to the current slice and the current patient")
         print(f"-----")
         convert_dataset_mi(
-            source=data_dir, source_mask=opts.data_dir_mask,  dest=dest_dir, pop_range=10, transpose_img = opts.transpose_img, apply_mask=opts.apply_mask, hi=255.0, low=0.0
+            source=data_dir, source_mask=data_dir_mask,  dest=dest_dir, pop_range=pop_range, transpose_img = transpose_img, apply_mask=apply_mask, hi=255.0, low=0.0
         )
 
     # Save as zip
-    if opts.processing_step == 'snap_zip':
+    if processing_step == 'snap_zip':
         dest_dir = interim_dir
         print(f"\nSave to zip, output folder: {dest_dir}")
         write_to_zip(
-            source= os.path.join(data_dir), dest=dest_dir,  max_patients=opts.max_patients, split=opts.validation_split
+            source= os.path.join(data_dir), dest=dest_dir,  dataset=dataset, max_patients=max_patients, validation_method=validation_method, split=validation_split
         )
-
-    print("May be the force with you!")
-
 #----------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
-    prepare_Pelvis_2_1()
+    main()

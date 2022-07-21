@@ -94,43 +94,39 @@ def get_box(img, box, perc_border=.0):
     return img
 
 
-def normalize(img, convert_to_uint8=None, min_val=None, max_val=None):
+def normalize(img, convert_to_uint8, scale_by_255, min_val=None, max_val=None):
     if not min_val:
         min_val = img.min()
     if not max_val:
         max_val = img.max()
 
-    if convert_to_uint8 is not None:
-        img = (img.astype(np.float64) - min_val) / (max_val - min_val) # normalize the data to 0 - 1
-        img = 255 * img  # Now scale by 255
+    img = (img.astype(np.float64) - min_val) / (max_val - min_val)
+    if scale_by_255:
+        img = 255.0 * img
+    if convert_to_uint8:
         img = img.astype(np.uint8)
-    else:
-        img = (img.astype(np.float64) - min_val) / (max_val - min_val)
 
-    # img -= img.mean()
-    # img /= img.std()
     return img
 
-def loader(img_path, img_dim, box=None, clip=None, scale=None, convert_to_uint8=None):
+def loader(img_path, img_dim, box, clip, scale, convert_to_uint8, scale_by_255):
     # Img
     img = load_img(img_path)
 
     # Select Box Area
-    if box:
+    if box is not None:
         img = get_box(img, box, perc_border=0.5)
     # Resize
     if img_dim != img.shape[0]:
         img = cv2.resize(img, (img_dim, img_dim))
     # Clip
-    if clip:
+    if clip is not None:
         img = np.clip(img, clip['min'], clip['max'])
 
     # Normalize
-    if scale:
-        img = normalize(img,convert_to_uint8, min_val=scale['min'], max_val=scale['max'])
+    if scale is not None:
+        img = normalize(img, convert_to_uint8, scale_by_255, min_val=scale['min'], max_val=scale['max'])
     else:
-        img = normalize(img, convert_to_uint8)
-
+        img = normalize(img, convert_to_uint8, scale_by_255)
 
     # To Tensor
     img = torch.from_numpy(img)
@@ -139,24 +135,33 @@ def loader(img_path, img_dim, box=None, clip=None, scale=None, convert_to_uint8=
 
 class ImgDatasetPreparation(torch.utils.data.Dataset):
     """Characterizes a dataset for PyTorch"""
-    def __init__(self, data, cfg_data, data_dir):
+    def __init__(
+            self,
+            data:               pd.Series,      # patients id list as <id_patient>_<id_slice>
+            data_dir:           str,            # path to raw data
+            resolution:         int,            # desidered resolution
+            data_dir_box:       str,            # path to box file
+            box_value:          str,            # box opt
+            clip:               {},             # clip range
+            scale:              {},             # sale range
+            convert_to_uint8    :bool=False,    # uint8 options
+            scale_by_255        :bool=True      # scale from [0.0, 1.0] to [0.0 255.0]
+    ):
         """Initialization"""
         self.img_dir = os.path.join(data_dir)
         self.data = data # estrai da file patients_info_CLARO_retrospettivo.xlsx
         # Box
-        if cfg_data["box_file"]:
-            box_data = pd.read_excel(cfg_data["box_file"], index_col="img ID", dtype=list)
-            self.boxes = {os.path.basename(row[0]): eval(row[1][cfg_data["box_value"]]) for row in box_data.iterrows()}
+        if data_dir_box is not None:
+            box_data = pd.read_excel(data_dir_box, index_col="img ID", dtype=list)
+            self.boxes = {os.path.basename(row[0]): eval(row[1][box_value]) for row in box_data.iterrows()}
         else:
             self.boxes = None
-        # Clip
-        self.clip = cfg_data["clip"]
-        # Scale
-        self.scale = cfg_data["scale"]
-        # Convert to uint8
-        self.convert_to_uint8 = cfg_data["convert_to_uint8"]
-        # Dim
-        self.img_dim = cfg_data["image_size"]
+
+        self.clip = clip
+        self.scale = scale
+        self.convert_to_uint8 = convert_to_uint8
+        self.scale_by_255 = scale_by_255
+        self.img_dim = resolution
 
     def __len__(self):
         """Denotes the total number of samples"""
@@ -176,6 +181,6 @@ class ImgDatasetPreparation(torch.utils.data.Dataset):
             box = None
         # Load data and get label
         img_path = os.path.join(self.img_dir, patient_id, "images", f"{patient_id + '_' + img_id}.tif")
-        x = loader(img_path=img_path, img_dim=self.img_dim, box=box, clip=self.clip, scale=self.scale, convert_to_uint8=self.convert_to_uint8)
+        x = loader(img_path=img_path, img_dim=self.img_dim, box=box, clip=self.clip, scale=self.scale, convert_to_uint8=self.convert_to_uint8, scale_by_255=self.scale_by_255)
 
         return x, patient_id, img_id

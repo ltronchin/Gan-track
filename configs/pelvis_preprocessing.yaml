@@ -6,7 +6,7 @@ device:
   gpu_num_workers: 32
 
 data:
-  image_size: 256
+  resolution: 256
   channel: 1
 
   classes: # name of classes
@@ -28,6 +28,7 @@ data:
       "train": 0.7
       "val": 0.2
       "test": 0.1
+    n_exp: 1
 
   modes:
     MR_nonrigid_CT:
@@ -51,12 +52,10 @@ data:
       upper_percentile:
       lower_percentile:
 
-  preprocessing_option:
-    process_dicom_2_nifti:
-    process_nifti_resized:
-    process_nifti_normalized:
-    snap_pickle:
-    snap_zip: on
+  options:
+    pop_range: 10 # Number of slice to drop and the beginning/end od the stack, default 10
+    apply_mask: True # Apply to MR and CT the boolean mask computed using CT mode, default True
+    transpose_img: True # Transpose the 2D slice swapping the axis, defaul True
 
 network:
   model_name: 'stylegan2-ada'

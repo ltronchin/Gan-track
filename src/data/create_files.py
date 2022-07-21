@@ -33,6 +33,19 @@ def format_label_path_claro(list_path, current_label):
 
     return [fpath, current_label]
 
+def generate_label_files(sample_patients, split=None, dest_dir=None):
+
+    dataset_json = {
+        'labels': [
+            format_label_path_claro(list_path=util_general.split_dos_path_into_components(p), current_label=l) for p, l in zip(sample_patients['img'], sample_patients['label'])
+        ]
+    }
+    if dest_dir is None:
+        return dataset_json
+    else:
+        with open(os.path.join(dest_dir, f"dataset_{split}.json"), 'w') as f:
+            json.dump(dataset_json, f, ensure_ascii=False, indent=4)  # save as json
+
 def main(
         dataset_name,
         train_split,
@@ -98,12 +111,8 @@ def main(
         sample_patients = pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', 'all.txt'), sep=" ")
         # Label.
         # Generate a dataset.json for label.
-        dataset_json = {
-            'labels': [
-                format_label_path_claro(list_path=util_general.split_dos_path_into_components(p), current_label=l) for p, l in zip(sample_patients['img'], sample_patients['label'])
-            ]
-        }
-        # Create output directory.
+        dataset_json = generate_label_files(sample_patients)
+
         sample_patients = np.unique([util_general.split_dos_path_into_components(p)[0] for p in sample_patients['img']]) # Select only the patient id.
         patient_job = len(sample_patients)
         print()
@@ -112,16 +121,21 @@ def main(
         dest_dir_jobs = os.path.join(data_dir, "jobs", basename_root)
         util_general.create_dir(dest_dir_jobs)
 
-        with open(os.path.join(dest_dir_jobs, f"dataset_json"), 'w') as f:
+        # Save label
+        with open(os.path.join(dest_dir_jobs, f"dataset.json"), 'w') as f:
             json.dump(dataset_json, f, ensure_ascii=False, indent=4)  # save as json
-        io_utils.write_pickle(dataset_json, os.path.join(dest_dir_jobs, f"dataset_json.pickle"))  # save as pickle
 
         for fold in range(n_exp):
             basename = basename_root + f"_val-{validation_method}_exps-{n_exp:d}_fold-{fold:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
             # Jobs Generation.
             train = pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'train.txt'), sep=" ")
-            val =  pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'val.txt'), sep=" ")
+            val =   pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'val.txt'), sep=" ")
             test =  pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'test.txt'), sep=" ")
+
+            # Label.
+            generate_label_files(train, f'fold-{fold}_train', dest_dir_jobs)
+            generate_label_files(val,   f'fold-{fold}_val',   dest_dir_jobs)
+            generate_label_files(test,  f'fold-{fold}_test',  dest_dir_jobs)
 
             train = np.unique([util_general.split_dos_path_into_components(p)[0] for p in train['img']])
             val = np.unique([util_general.split_dos_path_into_components(p)[0] for p in val['img']])

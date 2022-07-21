@@ -776,7 +776,7 @@ def write_to_zip(
             zipObj.write(file, filename)
 
     # Get all patients in temp folder.
-    patients = glob.glob(os.path.join(source, "*"))
+    patients = glob.glob(os.path.join(source, "*[!json]"))
     # Get only the names of patients.
     patients = [path_utils.get_filename_without_extension(patient) for patient in patients]
     assert len(patients) > 0
@@ -801,11 +801,14 @@ def write_to_zip(
 
         if os.path.exists(split_path):
             print(f"Load saved split, name: {split_path}")
+            print('')
             s = io_utils.read_pickle(split_path)
             train_patients, val_patients, test_patients = s["train"], s["val"], s["test"]
-        elif validation_method == 'bootstrap':  #todo Implement bootstrap val method
-            pass
-        elif validation_method == 'hold_out':
+
+        elif validation_method == 'bootstrap':
+            raise NotImplementedError(f"{validation_method} is not implemented")
+
+        else: # hold_out
             print(f"Create new split without considering the label distribution. See the script 'create_files.py' otherwise.")
             print('')
 
@@ -828,14 +831,22 @@ def write_to_zip(
             with open(os.path.join(parent_dir, "train_val_test_ids", f"{fbasename}.json"), 'w') as f:
                 json.dump(s, f, ensure_ascii=False, indent=4)  # save as json
             io_utils.write_pickle(s, split_path)  # save as pickle
-        else:
-            raise NotImplementedError(f"{opts.dataset:s} is not implemented")
 
         # Init zip file.
         out_path = os.path.join(parent_dir, f"{fbasename}.zip",)
 
         # Write to zip
         with zipfile.ZipFile(out_path, "w") as zipObj:
+
+            # Write label to zip
+            if os.path.exists(os.path.join(source, 'dataset.json')):
+                print(f"Zip label: {os.path.join(source, 'dataset.json')}")
+                zipObj.write(os.path.join(source, 'dataset.json'), 'dataset.json') # source_path / path_in_zip
+            for split in ['train', 'valid', 'test']:
+                if os.path.exists(os.path.join(source, f"dataset_fold-{fold}_{split}.json")):
+                    print(f"Zip label: {os.path.join(source, f'dataset_fold-{fold}_{split}.json')}")
+                    zipObj.write(os.path.join(source, f"dataset_fold-{fold}_{split}.json"), f"{split}/dataset.json")
+
             for patient in train_patients:
                 patient_path = os.path.join(source, patient)
                 add_to_zip(zipObj, patient_path, "train")
@@ -845,6 +856,8 @@ def write_to_zip(
             for patient in test_patients:
                 patient_path = os.path.join(source, patient)
                 add_to_zip(zipObj, patient_path, "test")
+
+
 
 # ----------------------------------------------------------------------------
 # CLARO PROCESSING

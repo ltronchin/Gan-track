@@ -136,6 +136,7 @@ wheel==0.36.2
 xlrd==2.0.1
 zipp==3.4.1
 
+ninja=1.10.2
 openpyxl
 dicom2nifti
 nilearn

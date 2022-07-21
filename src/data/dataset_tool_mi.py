@@ -841,11 +841,13 @@ def write_to_zip(
             # Write label to zip
             if os.path.exists(os.path.join(source, 'dataset.json')):
                 print(f"Zip label: {os.path.join(source, 'dataset.json')}")
+                print('')
                 zipObj.write(os.path.join(source, 'dataset.json'), 'dataset.json') # source_path / path_in_zip
             for split in ['train', 'valid', 'test']:
                 if os.path.exists(os.path.join(source, f"dataset_fold-{fold}_{split}.json")):
                     print(f"Zip label: {os.path.join(source, f'dataset_fold-{fold}_{split}.json')}")
-                    zipObj.write(os.path.join(source, f"dataset_fold-{fold}_{split}.json"), f"{split}/dataset.json")
+                    print('')
+                    zipObj.write(os.path.join(source, f"dataset_fold-{fold}_{split}.json"), 'dataset.json')  # zipObj.write(os.path.join(source, f"dataset_fold-{fold}_{split}.json"), f"{split}/dataset.json")
 
             for patient in train_patients:
                 patient_path = os.path.join(source, patient)

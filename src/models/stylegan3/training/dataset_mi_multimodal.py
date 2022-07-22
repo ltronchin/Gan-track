@@ -38,8 +38,8 @@ class Dataset(torch.utils.data.Dataset):
         use_labels  = False,    # Enable conditioning labels? False = label dimension is zero.
         xflip        = False,    # Artificially double the size of the dataset via x-flips. Applied after max_size.
         # CUSTOMIZING START
-        split="train",          # Dataset to train
-        modalities=None,        # Input modalities for StyleGAN.
+        split       ="train",          # Dataset to train
+        modalities  = None,        # Input modalities for StyleGAN.
         # CUSTOMIZING END
         random_seed = 0,        # Random seed to use when applying max_size.
     ):
@@ -264,7 +264,9 @@ class CustomImageFolderDataset(Dataset):
         return out_image, fname # CHW
 
     def _load_raw_labels(self):
-        fname = "dataset.json"
+        # CUSTOMIZATION START
+        fname = f"{self._split}/dataset.json" # fname = "dataset.json"
+        # CUSTOMIZATION STOP
         if fname not in self._all_fnames:
             return None
         with self._open_file(fname) as f:

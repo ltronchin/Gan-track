@@ -129,8 +129,8 @@ def main(
             basename = basename_root + f"_val-{validation_method}_exps-{n_exp:d}_fold-{fold:d}_train-{train_split:0.2f}_val-{val_split:0.2f}_test-{test_split:0.2f}"
             # Jobs Generation.
             train = pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'train.txt'), sep=" ")
-            val =   pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'val.txt'), sep=" ")
-            test =  pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'test.txt'), sep=" ")
+            val   = pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'val.txt'), sep=" ")
+            test  = pd.read_csv(os.path.join(data_dir, 'bootstrap', 'folds', str(n_exp), str(fold), 'test.txt'), sep=" ")
 
             # Label.
             generate_label_files(train, f'fold-{fold}_train', dest_dir_jobs)

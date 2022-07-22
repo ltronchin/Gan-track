@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH -A snic2022-5-277 -p alvis
-#SBATCH -N 1 --gpus-per-node=A100:1
+#SBATCH -N 1 --gpus-per-node=V100:1
 #SBATCH -t 0-24:00:00
 #SBATCH --error=job_%J.err
 #SBATCH --output=out_%J.out

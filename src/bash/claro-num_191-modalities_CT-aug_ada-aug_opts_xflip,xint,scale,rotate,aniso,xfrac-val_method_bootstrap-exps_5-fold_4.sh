@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH -A snic2022-5-277 -p alvis
-#SBATCH -N 1 --gpus-per-node=A100:1
+#SBATCH -N 1 --gpus-per-node=V100:1
 #SBATCH -t 0-24:00:00
 #SBATCH --error=job_%J.err
 #SBATCH --output=out_%J.out
@@ -8,7 +8,7 @@
 #SBATCH --mail-user=l.tronchin@unicampus.it
 
 module load CUDA/11.3.1
-module load Python/3.8.6-GCCcore-10.3.0
+module load Python/3.9.5-GCCcore-10.3.0
 module load OpenMPI/4.1.1-GCC-10.3.0
 module load PyTorch/1.11.0-foss-2021a-CUDA-11.3.1
 

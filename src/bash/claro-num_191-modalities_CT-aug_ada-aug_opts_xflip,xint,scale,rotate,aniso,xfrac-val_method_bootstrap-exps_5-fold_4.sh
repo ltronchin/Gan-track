@@ -7,12 +7,9 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=l.tronchin@unicampus.it
 
-#module load CUDA/11.3.1
-#module load Python/3.8.6-GCCcore-10.3.0
-
-module load GCC/10.3.0
+module load CUDA/11.3.1
+module load Python/3.8.6-GCCcore-10.3.0
 module load OpenMPI/4.1.1-GCC-10.3.0
-module load Python/3.9.5-GCCcore-10.3.0
 module load PyTorch/1.11.0-foss-2021a-CUDA-11.3.1
 
 cd /cephyr/users/tronchin/Alvis/ltronchin/envs/stylegan3

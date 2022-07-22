@@ -115,7 +115,7 @@ def main():
             # Model options.
             c.model                 = 'stylegan2'
             c.batch                 = 32 # 16
-            c.map_depth             = None # 2
+            c.map_depth             = 8 # 2
             c.glr                   = 0.0025
             c.dlr                   = 0.0025
             c.cbase                 = 16384

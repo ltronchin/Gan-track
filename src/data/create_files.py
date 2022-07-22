@@ -138,12 +138,17 @@ def main(
             generate_label_files(test,  f'fold-{fold}_test',  dest_dir_jobs)
 
             train = np.unique([util_general.split_dos_path_into_components(p)[0] for p in train['img']])
-            val = np.unique([util_general.split_dos_path_into_components(p)[0] for p in val['img']])
-            test = np.unique([util_general.split_dos_path_into_components(p)[0] for p in test['img']])
+            val   = np.unique([util_general.split_dos_path_into_components(p)[0] for p in val['img']])
+            test  = np.unique([util_general.split_dos_path_into_components(p)[0] for p in test['img']])
             print(f"Train: {len(train)}, Val: {len(val)}, Test: {len(test)}")
 
             # Save the training/validation/test split
-            s = {"sample_patients":list(sample_patients), "train":list(train), "val": list(val), "test": list(test)}
+            s = {
+                "sample_patients": list(sample_patients),
+                "train": list(train),
+                "val":   list(val),
+                "test":  list(test)
+            }
             with open(os.path.join(dest_dir_jobs, f"{basename}.json"), 'w') as f:
                 json.dump(s, f, ensure_ascii=False, indent=4)  # save as json
             io_utils.write_pickle(s,  os.path.join(dest_dir_jobs, f"{basename}.pickle"))  # save as pickle

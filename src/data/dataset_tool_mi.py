@@ -935,65 +935,70 @@ def process_tiff(source:                str,
 
     for x, id_patient, id_slice in dataloader:  # Iterate over the batches of the dataset
         # Save img a modes dict.
-        img = {
-            mode[0]: x.detach().cpu().numpy()[0][0]
-        }  # dictionary.
+        try:
+            img = {
+                mode[0]: x.detach().cpu().numpy()[0][0]
+            }  # dictionary.
 
-        # id_patient.
-        id_patient = id_patient[0]
-        # id_slice.
-        id_slice = id_slice[0]
+            # id_patient.
+            id_patient = id_patient[0]
+            # id_slice.
+            id_slice = id_slice[0]
 
-        # Format path temp/<id_patient>/<id_patient>_<id_slice>
-        archive_fname = f"{id_patient}/{id_patient}_{int(id_slice):05d}.pickle"
-        print(archive_fname)
-        path_utils.make_dir(os.path.join(temp, id_patient), is_printing=False)
-        out_path = os.path.join(temp, archive_fname)
+            # Format path temp/<id_patient>/<id_patient>_<id_slice>
+            archive_fname = f"{id_patient}/{id_patient}_{int(id_slice):05d}.pickle"
+            print(archive_fname)
+            path_utils.make_dir(os.path.join(temp, id_patient), is_printing=False)
+            out_path = os.path.join(temp, archive_fname)
 
-        if not is_overwrite and os.path.exists(out_path):
-            continue
+            if not is_overwrite and os.path.exists(out_path):
+                continue
 
-        # Transform may drop images.
-        if img is None:
-            print("Discarded image!")
-            print(f"Check: {archive_fname}")
-            break
+            # Transform may drop images.
+            if img is None:
+                print("Discarded image!")
+                print(f"Check: {archive_fname}")
+                print('')
+                break
 
-        # Running visualization.
-        if is_visualize:
-            if random.uniform(0, 1) > 0.9:
+            # Running visualization.
+            if is_visualize:
+                if random.uniform(0, 1) > 0.9:
 
-                plt.imshow(img[mode[0]], cmap="gray", vmin=0, vmax=255)
-                plt.axis('off')
-                plt.show()
+                    plt.imshow(img[mode[0]], cmap="gray", vmin=0, vmax=255)
+                    plt.axis('off')
+                    plt.show()
 
-        # Sanity check.
-        if is_sanity_check:
-            sanity_check_dir = os.path.join(dest, 'sanity_check', id_patient)
-            path_utils.make_dir(sanity_check_dir, is_printing=False)
-            im = Image.fromarray(img[mode[0]] / 255)
-            im.save(os.path.join(sanity_check_dir, f"{id_patient}_{int(id_slice):05d}.tif"), 'tiff', compress_level=0, optimize=False)
-        modalities = sorted(img.keys())
-        cur_image_attrs = {
-            "width": img[modalities[0]].shape[1],   "height": img[modalities[0]].shape[0], "modalities": modalities, "dtype": img[modalities[0]].dtype
-        }
-        if dataset_attrs is None: # if is None, stylegan2-ada preprocessing
-            dataset_attrs = cur_image_attrs
-            width = dataset_attrs["width"]
-            height = dataset_attrs["height"]
-            img_dtype = dataset_attrs["dtype"]
-            if width != height:
-                error(f"Image dimensions after scale and crop are required to be square.  Got {width}x{height}")
-            if width != 2 ** int(np.floor(np.log2(width))):
-                error("Image width/height after scale and crop are required to be power-of-two")
-            if img_dtype != 'float64':
-                error("Medical Stylegan2-ada? I want float data!")
-        elif dataset_attrs != cur_image_attrs:
-            err = [f"  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}" for k in  dataset_attrs.keys()]  # pylint: disable=unsubscriptable-object
-            error(f"Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n" + "\n".join(err))
+            # Sanity check.
+            if is_sanity_check:
+                sanity_check_dir = os.path.join(dest, 'sanity_check', id_patient)
+                path_utils.make_dir(sanity_check_dir, is_printing=False)
+                im = Image.fromarray(img[mode[0]] / 255)
+                im.save(os.path.join(sanity_check_dir, f"{id_patient}_{int(id_slice):05d}.tif"), 'tiff', compress_level=0, optimize=False)
+            modalities = sorted(img.keys())
+            cur_image_attrs = {
+                "width": img[modalities[0]].shape[1],   "height": img[modalities[0]].shape[0], "modalities": modalities, "dtype": img[modalities[0]].dtype
+            }
+            if dataset_attrs is None: # if is None, stylegan2-ada preprocessing
+                dataset_attrs = cur_image_attrs
+                width = dataset_attrs["width"]
+                height = dataset_attrs["height"]
+                img_dtype = dataset_attrs["dtype"]
+                if width != height:
+                    error(f"Image dimensions after scale and crop are required to be square.  Got {width}x{height}")
+                if width != 2 ** int(np.floor(np.log2(width))):
+                    error("Image width/height after scale and crop are required to be power-of-two")
+                if img_dtype != 'float64':
+                    error("Medical Stylegan2-ada? I want float data!")
+            elif dataset_attrs != cur_image_attrs:
+                err = [f"  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}" for k in  dataset_attrs.keys()]  # pylint: disable=unsubscriptable-object
+                error(f"Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n" + "\n".join(err))
 
-        # Save to pickle.
-        io_utils.write_pickle(img, out_path)
+            # Save to pickle.
+            io_utils.write_pickle(img, out_path)
+        except BaseException as err:  # to consider exception not listed above. Use it with
+            print(f"Unexpected {err=}, {type(err)=}")
+            raise  # to raise the error
 
 
 # ----------------------------------------------------------------------------

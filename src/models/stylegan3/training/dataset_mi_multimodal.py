@@ -274,7 +274,12 @@ class CustomImageFolderDataset(Dataset):
         if labels is None:
             return None
         labels = dict(labels)
-        labels = [labels[fname.replace("\\", "/")] for fname in self._image_fnames]
+        # CUSTOMIZATION START
+        labels = [labels[os.path.relpath(fname.replace("\\", "/"), f"{self._split}/")] for fname in self._image_fnames] # labels = [labels[fname.replace("\\", "/")] for fname in self._image_fnames]
+        print(f'Labels size:        {len(labels)}')
+        print(f'Images size:        {len(self._image_fnames)}')
+        assert len(labels) == len(self._image_fnames)
+        # CUSTOMIZATION STOP
         labels = np.array(labels)
         labels = labels.astype({1: np.int64, 2: np.float32}[labels.ndim])
         return labels

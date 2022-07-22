@@ -95,8 +95,8 @@ def main():
         for opts in itertools.product(*run_dict[run_key].values()):
             opt_aug             = opts[0]
             opt_modalities      = opts[1]
-            fold                = opts[2]
-            print(f'Opt aug: {opt_aug}, opt modalities: {opt_modalities}')
+            opts_fold                = opts[2]
+            print(f'Opt aug: {opt_aug}, opt modalities: {opt_modalities}, fold: {opts_fold}')
 
             # Dataset and data folder options.
             c.outdir                = '/cephyr/users/tronchin/Alvis/ltronchin/Gan-track/reports'
@@ -110,21 +110,21 @@ def main():
             # Validation options
             c.validation_method     = 'bootstrap'
             c.n_exps                = 5
-            c.fold                  = fold
+            c.fold                  = opts_fold
 
             # Model options.
             c.model                 = 'stylegan2'
-            c.batch                 = 16
-            c.map_depth             = 2
+            c.batch                 = 32 # 16
+            c.map_depth             = None # 2
             c.glr                   = 0.0025
             c.dlr                   = 0.0025
             c.cbase                 = 16384
 
             # Training options.
             c.kimg                  = 10000
-            c.gpus                  = 1
+            c.gpus                  = 2 # 1
             c.workers               = 3
-            c.gamma                 = 0.8192
+            c.gamma                 = 0.4096 # 0.8192
             c.snap                  = 10
             c.mirror                = 1
 

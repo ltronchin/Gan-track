@@ -276,8 +276,8 @@ class CustomImageFolderDataset(Dataset):
         labels = dict(labels)
         # CUSTOMIZATION START
         labels = [labels[os.path.relpath(fname.replace("\\", "/"), f"{self._split}/")] for fname in self._image_fnames] # labels = [labels[fname.replace("\\", "/")] for fname in self._image_fnames]
-        print(f'Labels size:        {len(labels)}')
-        print(f'Images size:        {len(self._image_fnames)}')
+        #print(f'Labels size:        {len(labels)}')
+        #print(f'Images size:        {len(self._image_fnames)}')
         assert len(labels) == len(self._image_fnames)
         # CUSTOMIZATION STOP
         labels = np.array(labels)

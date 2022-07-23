@@ -30,7 +30,7 @@ from genlib.utils import util_general
 def main(**kwargs):
     opts = dnnlib.EasyDict(kwargs)  # Command line arguments.
 
-    if opts.repo_no_nask:
+    if opts.repo_no_mask:
         print('Load no-mask results.')
         # Update output directory for model results (where to find the trained models).
         outdir_model = os.path.join(opts.outdir, opts.dataset, "repo_no_mask", "training-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")

@@ -27,7 +27,7 @@ import PIL.Image
 
 import torch
 
-from src.utils import util_general
+from src.models.stylegan3.genlib.utils import util_general
 
 def setup_snapshot_image_grid(training_set, random_seed=0):
     rnd = np.random.RandomState(random_seed)

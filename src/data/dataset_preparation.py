@@ -24,8 +24,8 @@ import time
 import torch
 from torch.utils.data import DataLoader
 
-from src.utils import util_general
-from src.utils import util_medical_data
+from src.models.stylegan3.genlib.utils import util_general
+from src.models.stylegan3.genlib.utils import util_medical_data
 
 from PIL import Image
 

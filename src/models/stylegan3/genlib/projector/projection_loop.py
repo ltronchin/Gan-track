@@ -6,7 +6,7 @@ import pickle
 import torch
 import time
 
-from src.utils import util_general
+from src.models.stylegan3.genlib.utils import util_general
 
 def projection_loop(
     run_dir                 = '.',      # Output directory.

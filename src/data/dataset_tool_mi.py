@@ -27,7 +27,7 @@ import PIL.Image
 from PIL import Image
 
 import yaml
-from src.utils import util_general
+from src.models.stylegan3.genlib.utils import util_general
 import json
 import glob
 import dicom2nifti
@@ -46,7 +46,7 @@ import src.engine.utils.utils as utils
 import src.engine.utils.volume as volume_utils
 import src.engine.utils.io_utils as io_utils
 
-from src.utils import util_medical_data
+from src.models.stylegan3.genlib.utils import util_medical_data
 #----------------------------------------------------------------------------
 
 def sanity_check_fllename(data_dir):

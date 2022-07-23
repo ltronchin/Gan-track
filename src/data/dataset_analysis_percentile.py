@@ -29,7 +29,7 @@ plt.rcParams['font.size'] = 12
 
 import torch
 
-from src.utils import util_general
+from src.models.stylegan3.genlib.utils import util_general
 
 # Argument function
 

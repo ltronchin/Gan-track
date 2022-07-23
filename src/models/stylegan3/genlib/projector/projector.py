@@ -16,7 +16,7 @@ plt.rcParams['font.size'] = 16
 import PIL
 import imageio
 
-from src.utils import util_general
+from src.models.stylegan3.genlib.utils import util_general
 import dnnlib
 
 def intersection(l1, l2):

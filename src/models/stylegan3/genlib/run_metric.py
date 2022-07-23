@@ -30,9 +30,9 @@ def main(**kwargs):
     opts = dnnlib.EasyDict(kwargs)  # Command line arguments.
 
     # Update output directory for model results (where to find the trained models).
-    outdir_model = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{opts.dataset_logname:s}",  f"{opts.modalities:s}")
+    outdir_model = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{opts.dataset_logname}", f"{opts.modalities:s}")
     # Update output directory to save results.
-    opts.outdir = os.path.join(opts.outdir, opts.dataset, "metric-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
+    opts.outdir = os.path.join(opts.outdir, opts.dataset, "metric-runs", f"{opts.dataset_logname}", f"{opts.modalities:s}")
 
     # Initialize the logger.
     dnnlib.util.Logger(should_flush=True)

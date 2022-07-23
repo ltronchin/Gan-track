@@ -22,6 +22,7 @@ from genlib.utils import util_general
 @click.option('--split',                        help="Validation split",   metavar="STRING",                    type=str, default="train")
 @click.option('--network_pkl',                  help='Network pickle filename or Metric filename',                type=str, required=True)
 @click.option('--snap',                         help='How often to save snapshots', metavar='TICKS',            type=click.IntRange(min=1), default=50, show_default=True)
+@click.option('--repo_no_mask',                 help='Load the no_mask experiments', metavar='BOOL',            type=bool, default=False, show_default=True)
 # Projector parameters.
 # Required
 @click.option('--experiment',                   help='Experiment run id to take from the results',              type=str, required=True)
@@ -29,12 +30,17 @@ from genlib.utils import util_general
 def main(**kwargs):
     opts = dnnlib.EasyDict(kwargs)  # Command line arguments.
 
-    print(opts.dataset_logname)
-    
-    # Update output directory for model results (where to find the trained models).
-    outdir_model = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
-    # Update output directory to save results.
-    opts.outdir = os.path.join(opts.outdir, opts.dataset, "metric-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
+    if opts.repo_no_nask:
+        print('Load no-mask results.')
+        # Update output directory for model results (where to find the trained models).
+        outdir_model = os.path.join(opts.outdir, opts.dataset, "repo_no_mask", "training-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
+        # Update output directory to save results.
+        opts.outdir = os.path.join(opts.outdir, opts.dataset, "repo_no_mask", "metric-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
+    else:
+        # Update output directory for model results (where to find the trained models).
+        outdir_model = os.path.join(opts.outdir, opts.dataset, "training-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
+        # Update output directory to save results.
+        opts.outdir = os.path.join(opts.outdir, opts.dataset, "metric-runs", f"{opts.dataset_logname:s}", f"{opts.modalities:s}")
 
     # Initialize the logger.
     dnnlib.util.Logger(should_flush=True)

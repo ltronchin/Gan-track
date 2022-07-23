@@ -125,7 +125,7 @@ def main():
             c.gpus                  = 2 # 1
             c.workers               = 3
             c.gamma                 = 0.4096 # 0.8192
-            c.snap                  = 10
+            c.snap                  = 50
             c.mirror                = 1
 
             # Augmentation options.

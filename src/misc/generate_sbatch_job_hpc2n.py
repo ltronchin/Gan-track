@@ -108,7 +108,7 @@ def main():
             # Dataset and data folder options.
             c.outdir                = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/reports'
             c.source_path           = '/pfs/proj/nobackup/fs/projnb10/snic2020-6-234/lotr/Gan-track/data/interim'
-            c.dataset               = 'Pelvis_2.1'
+            c.dataset               = 'Pelvis_2.1_repo_no_mask' #'Pelvis_2.1'
             c.split                 = 'train'
             c.num_patients          =  375
             c.modalities            =  opt_modalities #'MR_nonrigid_CT,MR_MR_T2'
